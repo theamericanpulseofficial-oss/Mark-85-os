@@ -21,13 +21,25 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: gradle
 
-      - name: Make Gradle Executable
-        run: chmod +x gradlew
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Ensure Gradle Wrapper Exists
+        run: |
+          if [ ! -f "gradle/wrapper/gradle-wrapper.jar" ]; then
+            echo "gradle-wrapper.jar missing, generating wrapper..."
+            gradle wrapper
+          fi
+          chmod +x gradlew || true
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        run: |
+          if [ -f "gradle/wrapper/gradle-wrapper.jar" ]; then
+            ./gradlew assembleDebug --stacktrace
+          else
+            gradle assembleDebug --stacktrace
+          fi
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
@@ -35,3 +47,4 @@ jobs:
           name: jarvis-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 14
+
