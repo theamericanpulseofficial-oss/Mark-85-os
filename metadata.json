@@ -1,0 +1,6 @@
+{
+  "name": "JARVIS",
+  "description": "Background Voice AI Phone Agent powered by NVIDIA API and local wake word detection.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

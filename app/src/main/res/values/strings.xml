@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">JARVIS</string>
+    <string name="jarvis_channel_name">JARVIS Voice Assistant</string>
+    <string name="jarvis_channel_desc">Background voice service for JARVIS phone agent</string>
+</resources>
