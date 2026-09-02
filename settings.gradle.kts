@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "JARVIS"
+rootProject.name = "Mark 85 OS"
 
 include(":app")

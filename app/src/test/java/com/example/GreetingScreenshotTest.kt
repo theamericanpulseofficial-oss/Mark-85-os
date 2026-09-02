@@ -4,7 +4,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.graphics.Color
 import com.example.agent.AgentState
-import com.example.ui.StatusIndicatorCard
+import com.example.ui.Mark85TelemetryHUD
 import com.example.ui.theme.JarvisOnlineGreen
 import com.example.ui.theme.MyApplicationTheme
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
@@ -27,10 +27,11 @@ class GreetingScreenshotTest {
     fun greeting_screenshot() {
         composeTestRule.setContent {
             MyApplicationTheme {
-                StatusIndicatorCard(
+                Mark85TelemetryHUD(
                     agentState = AgentState.LISTENING_FOR_WAKE_WORD,
                     stateColor = JarvisOnlineGreen,
-                    hasApiKey = true
+                    hasApiKey = true,
+                    isRunning = true
                 )
             }
         }

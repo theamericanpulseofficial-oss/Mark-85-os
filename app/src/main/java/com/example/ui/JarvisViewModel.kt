@@ -41,6 +41,14 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun startService() {
+        toggleAssistant(true)
+    }
+
+    fun stopService() {
+        toggleAssistant(false)
+    }
+
     fun triggerManualListen() {
         JarvisForegroundService.triggerManualListen(context)
     }

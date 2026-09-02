@@ -47,6 +47,7 @@ import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -152,7 +153,7 @@ fun SettingsScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = "JARVIS CONFIGURATION",
+                        text = "MARK 85 OS CONFIG",
                         style = MaterialTheme.typography.titleMedium.copy(
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 2.sp,
@@ -249,7 +250,7 @@ fun SettingsScreen(
                             label = { Text("Agent / Reasoning Model") },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .menuAnchor()
+                                .menuAnchor(MenuAnchorType.PrimaryEditable, true)
                                 .testTag("agent_model_input"),
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isModelDropdownExpanded) },
                             colors = outlinedTextFieldColors()
@@ -285,7 +286,7 @@ fun SettingsScreen(
                             label = { Text("Voice Model") },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .menuAnchor()
+                                .menuAnchor(MenuAnchorType.PrimaryEditable, true)
                                 .testTag("voice_model_input"),
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isVoiceDropdownExpanded) },
                             colors = outlinedTextFieldColors()

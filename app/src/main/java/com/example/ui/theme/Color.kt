@@ -2,21 +2,39 @@ package com.example.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val JarvisCyan = Color(0xFF00E5FF)
-val JarvisCyanDark = Color(0xFF0091EA)
-val JarvisBlue = Color(0xFF2979FF)
-val JarvisDeepBackground = Color(0xFF060B12)
-val JarvisSurfaceDark = Color(0xFF0E1624)
-val JarvisSurfaceVariant = Color(0xFF162235)
-val JarvisBorderGlow = Color(0xFF00E5FF).copy(alpha = 0.35f)
+// Mark 85 OS Core Palette
+val MarkCyan = Color(0xFF00F0FF)
+val MarkCyanGlow = Color(0xFF38E1FF)
+val MarkCyanDark = Color(0xFF0077B6)
+val MarkBlue = Color(0xFF0096C7)
+val MarkGold = Color(0xFFFFD166)
+val MarkGoldAccent = Color(0xFFFFB703)
+val MarkCrimson = Color(0xFFE63946)
+val MarkCrimsonDark = Color(0xFF9E0012)
 
-val JarvisOnlineGreen = Color(0xFF00E676)
-val JarvisListeningCyan = Color(0xFF00E5FF)
-val JarvisThinkingAmber = Color(0xFFFFAB00)
-val JarvisExecutingPurple = Color(0xFFB388FF)
-val JarvisSpeakingBlue = Color(0xFF40C4FF)
-val JarvisErrorRed = Color(0xFFFF5252)
+val MarkDeepBackground = Color(0xFF050811)
+val MarkSurfaceDark = Color(0xFF0A101D)
+val MarkSurfaceElevated = Color(0xFF101A2E)
+val MarkSurfaceBorder = Color(0xFF00F0FF).copy(alpha = 0.25f)
+val MarkGoldBorder = Color(0xFFFFD166).copy(alpha = 0.35f)
 
-val TextPrimary = Color(0xFFF0F6FC)
-val TextSecondary = Color(0xFF8B949E)
-val TextMuted = Color(0xFF586069)
+// Legacy aliases for full backward compatibility
+val JarvisCyan = MarkCyan
+val JarvisCyanDark = MarkCyanDark
+val JarvisBlue = MarkBlue
+val JarvisDeepBackground = MarkDeepBackground
+val JarvisSurfaceDark = MarkSurfaceDark
+val JarvisSurfaceVariant = MarkSurfaceElevated
+val JarvisBorderGlow = MarkSurfaceBorder
+
+val JarvisOnlineGreen = Color(0xFF00F59B)
+val JarvisListeningCyan = Color(0xFF00F0FF)
+val JarvisThinkingAmber = Color(0xFFFFB703)
+val JarvisExecutingPurple = Color(0xFFB57EDC)
+val JarvisSpeakingBlue = Color(0xFF48CAE4)
+val JarvisErrorRed = Color(0xFFFF3366)
+
+val TextPrimary = Color(0xFFF8FAFC)
+val TextSecondary = Color(0xFF94A3B8)
+val TextMuted = Color(0xFF475569)
+

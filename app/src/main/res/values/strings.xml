@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">JARVIS</string>
-    <string name="jarvis_channel_name">JARVIS Voice Assistant</string>
-    <string name="jarvis_channel_desc">Background voice service for JARVIS phone agent</string>
+    <string name="app_name">Mark OS</string>
+    <string name="jarvis_channel_name">Mark 85 OS Voice Assistant</string>
+    <string name="jarvis_channel_desc">Background voice service for Mark 85 OS phone agent</string>
 </resources>
