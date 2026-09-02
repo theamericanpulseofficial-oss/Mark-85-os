@@ -61,7 +61,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
@@ -534,49 +536,45 @@ fun IronManMark85Centerpiece(
                     contentScale = ContentScale.FillBounds
                 )
 
-                // 2. Exact Black Cover Mask: when stopped, covers the white eyes and reactor slits with pure black
-                // When started, fades to 0 smoothly, revealing the pristine original artwork without any extra glow layers
+                // 2. Exact Black Cover Mask: when stopped, covers ONLY the white eyes and Arc Reactor up to their outlines
+                // When started, fades smoothly to 0, revealing the original artwork
                 if (coverAlpha > 0.005f) {
                     Canvas(modifier = Modifier.fillMaxSize()) {
                         val w = size.width
                         val h = size.height
 
-                        val leftEyeCenter = Offset(w * 0.442f, h * 0.432f)
-                        val rightEyeCenter = Offset(w * 0.558f, h * 0.432f)
-                        val reactorCenter = Offset(w * 0.500f, h * 0.755f)
-                        val leftShoulderNode = Offset(w * 0.305f, h * 0.655f)
-                        val rightShoulderNode = Offset(w * 0.695f, h * 0.655f)
-
                         val maskColor = Color.Black.copy(alpha = coverAlpha)
 
-                        // Hide left eye slit
-                        drawOval(
-                            color = maskColor,
-                            topLeft = Offset(leftEyeCenter.x - w * 0.055f, leftEyeCenter.y - h * 0.016f),
-                            size = Size(w * 0.11f, h * 0.032f)
-                        )
-                        // Hide right eye slit
-                        drawOval(
-                            color = maskColor,
-                            topLeft = Offset(rightEyeCenter.x - w * 0.055f, rightEyeCenter.y - h * 0.016f),
-                            size = Size(w * 0.11f, h * 0.032f)
-                        )
-                        // Hide Arc Reactor core
+                        // 1. Left Eye - Slanted contour polygon covering 100% of the eye slit up to the armor outline
+                        val leftEyeCenter = Offset(w * 0.440f, h * 0.432f)
+                        withTransform({
+                            rotate(degrees = 13f, pivot = leftEyeCenter)
+                        }) {
+                            drawOval(
+                                color = maskColor,
+                                topLeft = Offset(leftEyeCenter.x - w * 0.058f, leftEyeCenter.y - h * 0.018f),
+                                size = Size(w * 0.116f, h * 0.036f)
+                            )
+                        }
+
+                        // 2. Right Eye - Slanted contour polygon covering 100% of the eye slit up to the armor outline
+                        val rightEyeCenter = Offset(w * 0.560f, h * 0.432f)
+                        withTransform({
+                            rotate(degrees = -13f, pivot = rightEyeCenter)
+                        }) {
+                            drawOval(
+                                color = maskColor,
+                                topLeft = Offset(rightEyeCenter.x - w * 0.058f, rightEyeCenter.y - h * 0.018f),
+                                size = Size(w * 0.116f, h * 0.036f)
+                            )
+                        }
+
+                        // 3. Arc Reactor - Fully covered evenly right up to the circular housing outline
+                        val reactorCenter = Offset(w * 0.500f, h * 0.755f)
                         drawCircle(
                             color = maskColor,
-                            radius = w * 0.088f,
+                            radius = w * 0.096f,
                             center = reactorCenter
-                        )
-                        // Hide shoulder nodes
-                        drawCircle(
-                            color = maskColor,
-                            radius = w * 0.025f,
-                            center = leftShoulderNode
-                        )
-                        drawCircle(
-                            color = maskColor,
-                            radius = w * 0.025f,
-                            center = rightShoulderNode
                         )
                     }
                 }
