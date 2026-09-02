@@ -29,6 +29,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     val isServiceRunning: StateFlow<Boolean> = JarvisForegroundService.isRunning
     val agentState: StateFlow<AgentState> = JarvisForegroundService.agentStateFlow
+    val liveTranscript: StateFlow<String> = JarvisForegroundService.liveTranscript
+    val liveResponse: StateFlow<String> = JarvisForegroundService.liveResponse
 
     private val _testState = MutableStateFlow<ConnectionTestState>(ConnectionTestState.Idle)
     val testState: StateFlow<ConnectionTestState> = _testState.asStateFlow()
@@ -51,6 +53,10 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     fun triggerManualListen() {
         JarvisForegroundService.triggerManualListen(context)
+    }
+
+    fun sendTextCommand(text: String) {
+        JarvisForegroundService.sendTextCommand(context, text)
     }
 
     fun saveSettings(newSettings: JarvisSettings) {

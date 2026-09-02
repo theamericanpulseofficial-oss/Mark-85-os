@@ -3,7 +3,6 @@ package com.example.ui
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -21,7 +20,6 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -31,8 +29,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.RocketLaunch
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
@@ -54,35 +57,32 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.agent.AgentState
 import com.example.ui.theme.JarvisErrorRed
 import com.example.ui.theme.JarvisExecutingPurple
-import com.example.ui.theme.JarvisListeningCyan
 import com.example.ui.theme.JarvisOnlineGreen
 import com.example.ui.theme.JarvisSpeakingBlue
-import com.example.ui.theme.JarvisThinkingAmber
-import com.example.ui.theme.MarkBlue
 import com.example.ui.theme.MarkCrimson
 import com.example.ui.theme.MarkCyan
-import com.example.ui.theme.MarkCyanGlow
 import com.example.ui.theme.MarkGold
-import com.example.ui.theme.MarkGoldAccent
 import com.example.ui.theme.MarkSurfaceBorder
 import com.example.ui.theme.MarkSurfaceDark
 import com.example.ui.theme.TextMuted
@@ -100,8 +100,12 @@ fun MainScreen(
     val isRunning by viewModel.isServiceRunning.collectAsState()
     val agentState by viewModel.agentState.collectAsState()
     val settings by viewModel.settings.collectAsState()
+    val liveTranscript by viewModel.liveTranscript.collectAsState()
+    val liveResponse by viewModel.liveResponse.collectAsState()
 
     var showDiagnosticDialog by remember { mutableStateOf(false) }
+    var textInput by remember { mutableStateOf("") }
+    val focusManager = LocalFocusManager.current
 
     val stateColor by animateColorAsState(
         targetValue = when (agentState) {
@@ -189,13 +193,10 @@ fun MainScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.SpaceBetween
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // 3. Central Iron Man Mark 85 Artwork with Glowing Crimson HUD Frame
+                // 3. Central Iron Man Mark 85 Artwork (Stable, zero jerk/jump)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -203,19 +204,17 @@ fun MainScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     IronManMark85Centerpiece(
-                        agentState = agentState,
-                        isRunning = isRunning,
-                        stateColor = stateColor
+                        isRunning = isRunning
                     )
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-                // 4. Bottom Action Area with Tactical Scanline Button
+                // 4. Bottom Action & Interactive Console Area
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 24.dp),
+                        .padding(bottom = 12.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     // API Key Missing Warning Banner if blank
@@ -223,11 +222,11 @@ fun MainScreen(
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(bottom = 12.dp),
+                                .padding(bottom = 8.dp),
                             colors = CardDefaults.cardColors(
                                 containerColor = MarkGold.copy(alpha = 0.12f)
                             ),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(10.dp),
                             border = CardDefaults.outlinedCardBorder().copy(
                                 brush = Brush.horizontalGradient(listOf(MarkGold, MarkCrimson))
                             )
@@ -241,36 +240,149 @@ fun MainScreen(
                                     fontWeight = FontWeight.SemiBold
                                 ),
                                 modifier = Modifier
-                                    .padding(8.dp)
+                                    .padding(6.dp)
                                     .fillMaxWidth(),
                                 textAlign = TextAlign.Center
                             )
                         }
                     }
 
-                    // Tactical START AGENT / STOP AGENT Button
+                    // Live Speech / Command Subtitle Display
+                    if (liveTranscript.isNotBlank() || liveResponse.isNotBlank()) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 8.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = Color(0xFF0D131A).copy(alpha = 0.9f)
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            border = CardDefaults.outlinedCardBorder().copy(
+                                brush = Brush.horizontalGradient(
+                                    listOf(Color(0xFF00DBE9).copy(alpha = 0.4f), Color(0xFFC5020B).copy(alpha = 0.4f))
+                                )
+                            )
+                        ) {
+                            Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+                                if (liveTranscript.isNotBlank()) {
+                                    Text(
+                                        text = "USER: \"$liveTranscript\"",
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            color = MarkGold,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 11.sp
+                                        ),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                if (liveResponse.isNotBlank()) {
+                                    Text(
+                                        text = "MARK 85: \"$liveResponse\"",
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            color = Color(0xFFDBFCFF),
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        ),
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Text Input Option (Type Command to Mark 85)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth(0.92f)
+                            .height(44.dp)
+                            .clip(RoundedCornerShape(22.dp))
+                            .background(Color(0xFF0B1017))
+                            .border(1.dp, Color(0xFF00DBE9).copy(alpha = 0.35f), RoundedCornerShape(22.dp))
+                            .padding(horizontal = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        BasicTextField(
+                            value = textInput,
+                            onValueChange = { textInput = it },
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("text_command_input"),
+                            textStyle = TextStyle(
+                                color = Color.White,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 12.sp
+                            ),
+                            cursorBrush = SolidColor(Color(0xFF00DBE9)),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                            keyboardActions = KeyboardActions(onSend = {
+                                if (textInput.isNotBlank()) {
+                                    viewModel.sendTextCommand(textInput.trim())
+                                    textInput = ""
+                                    focusManager.clearFocus()
+                                }
+                            }),
+                            singleLine = true,
+                            decorationBox = { innerTextField ->
+                                if (textInput.isEmpty()) {
+                                    Text(
+                                        text = "Type text command...",
+                                        color = Color.White.copy(alpha = 0.35f),
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                                innerTextField()
+                            }
+                        )
+                        IconButton(
+                            onClick = {
+                                if (textInput.isNotBlank()) {
+                                    viewModel.sendTextCommand(textInput.trim())
+                                    textInput = ""
+                                    focusManager.clearFocus()
+                                }
+                            },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Send,
+                                contentDescription = "Send Text Command",
+                                tint = if (textInput.isNotBlank()) Color(0xFF00DBE9) else Color(0xFF00DBE9).copy(alpha = 0.3f),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Tactical START / STOP / GRANT Button
                     TacticalScanlineButton(
                         isRunning = isRunning,
+                        hasMicrophonePermission = hasMicrophonePermission,
                         agentState = agentState,
                         onClick = {
-                            if (!isRunning) {
-                                if (!hasMicrophonePermission) {
-                                    onRequestMicrophonePermission()
-                                } else {
-                                    viewModel.startService()
-                                }
+                            if (!hasMicrophonePermission) {
+                                onRequestMicrophonePermission()
                             } else {
-                                viewModel.stopService()
+                                if (!isRunning) {
+                                    viewModel.startService()
+                                } else {
+                                    viewModel.stopService()
+                                }
                             }
                         }
                     )
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     // Tactical Subtitle Status
                     Text(
                         text = when {
-                            !isRunning -> "INITIATING PROTOCOL"
+                            !hasMicrophonePermission -> "MICROPHONE PERMISSION REQUIRED"
+                            !isRunning -> "SYSTEM READY • TAP TO ENGAGE"
                             agentState == AgentState.LISTENING_FOR_WAKE_WORD -> "STANDBY PROTOCOL ACTIVE • SAY \"HEY JARVIS\""
                             agentState == AgentState.LISTENING -> "LISTENING TO VOICE STREAM..."
                             agentState == AgentState.THINKING -> "NEURAL REASONING ACTIVE..."
@@ -279,10 +391,10 @@ fun MainScreen(
                             else -> "SYSTEM ACTIVE"
                         },
                         style = MaterialTheme.typography.labelSmall.copy(
-                            color = Color(0xFFB9CACB).copy(alpha = 0.6f),
+                            color = Color(0xFFB9CACB).copy(alpha = 0.65f),
                             fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp,
-                            letterSpacing = 2.sp,
+                            fontSize = 10.sp,
+                            letterSpacing = 1.5.sp,
                             fontWeight = FontWeight.Medium
                         ),
                         textAlign = TextAlign.Center
@@ -316,8 +428,11 @@ fun MainScreen(
                             style = MaterialTheme.typography.bodySmall.copy(color = TextPrimary, fontFamily = FontFamily.Monospace)
                         )
                         Text(
-                            text = "• Armor Protocol: Nanotech MK-85",
-                            style = MaterialTheme.typography.bodySmall.copy(color = TextPrimary, fontFamily = FontFamily.Monospace)
+                            text = "• Microphone Permission: ${if (hasMicrophonePermission) "GRANTED ✓" else "NOT GRANTED ✕"}",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                color = if (hasMicrophonePermission) JarvisOnlineGreen else JarvisErrorRed,
+                                fontFamily = FontFamily.Monospace
+                            )
                         )
                         Text(
                             text = "• Service Status: ${if (isRunning) "ACTIVE (FOREGROUND)" else "STANDBY"}",
@@ -374,34 +489,18 @@ fun TacticalHUDGrid() {
 
 @Composable
 fun IronManMark85Centerpiece(
-    agentState: AgentState,
     isRunning: Boolean,
-    stateColor: Color
+    agentState: AgentState = AgentState.OFFLINE,
+    stateColor: Color = Color(0xFF00DBE9)
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "IronManAnimations")
-
-    // Smooth power-on ignition animation when user starts the agent (smooth gradual power-on)
-    val ignition by animateFloatAsState(
-        targetValue = if (isRunning) 1f else 0f,
+    // Smooth power-off cover mask fade: 1f (black cover when off) -> 0f (revealing original white eyes & reactor when started)
+    val coverAlpha by animateFloatAsState(
+        targetValue = if (isRunning) 0f else 1f,
         animationSpec = tween(
-            durationMillis = 1200,
+            durationMillis = 600,
             easing = FastOutSlowInEasing
         ),
-        label = "IgnitionProgress"
-    )
-
-    // Living subtle breathing pulse for eyes & arc reactor when active
-    val arcPulse by infiniteTransition.animateFloat(
-        initialValue = 0.90f,
-        targetValue = 1.10f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(
-                durationMillis = if (isRunning) 1400 else 2800,
-                easing = FastOutSlowInEasing
-            ),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "ArcPulse"
+        label = "MaskCoverAlpha"
     )
 
     Box(
@@ -427,7 +526,7 @@ fun IronManMark85Centerpiece(
                 modifier = Modifier.size(dispWidth, dispHeight),
                 contentAlignment = Alignment.Center
             ) {
-                // 1. Tactical Red-Line Iron Man Illustration
+                // 1. Tactical Red-Line Iron Man Mark 85 Illustration (contains the exact original crisp white eyes and reactor)
                 Image(
                     painter = painterResource(id = R.drawable.iron_man_mark85_hud),
                     contentDescription = "Iron Man Mark 85",
@@ -435,21 +534,20 @@ fun IronManMark85Centerpiece(
                     contentScale = ContentScale.FillBounds
                 )
 
-                // 2. Dynamic Power-On Illumination & Power-Off Mask Layer
-                Canvas(modifier = Modifier.fillMaxSize()) {
-                    val w = size.width
-                    val h = size.height
+                // 2. Exact Black Cover Mask: when stopped, covers the white eyes and reactor slits with pure black
+                // When started, fades to 0 smoothly, revealing the pristine original artwork without any extra glow layers
+                if (coverAlpha > 0.005f) {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val w = size.width
+                        val h = size.height
 
-                    val leftEyeCenter = Offset(w * 0.442f, h * 0.432f)
-                    val rightEyeCenter = Offset(w * 0.558f, h * 0.432f)
-                    val reactorCenter = Offset(w * 0.500f, h * 0.755f)
-                    val leftShoulderNode = Offset(w * 0.305f, h * 0.655f)
-                    val rightShoulderNode = Offset(w * 0.695f, h * 0.655f)
+                        val leftEyeCenter = Offset(w * 0.442f, h * 0.432f)
+                        val rightEyeCenter = Offset(w * 0.558f, h * 0.432f)
+                        val reactorCenter = Offset(w * 0.500f, h * 0.755f)
+                        val leftShoulderNode = Offset(w * 0.305f, h * 0.655f)
+                        val rightShoulderNode = Offset(w * 0.695f, h * 0.655f)
 
-                    // A. Dark Cover Mask: when stopped, completely hides the white eyes and reactor core
-                    val coverAlpha = (1f - ignition).coerceIn(0f, 1f)
-                    if (coverAlpha > 0.005f) {
-                        val maskColor = Color(0xFF000000).copy(alpha = coverAlpha)
+                        val maskColor = Color.Black.copy(alpha = coverAlpha)
 
                         // Hide left eye slit
                         drawOval(
@@ -463,7 +561,7 @@ fun IronManMark85Centerpiece(
                             topLeft = Offset(rightEyeCenter.x - w * 0.055f, rightEyeCenter.y - h * 0.016f),
                             size = Size(w * 0.11f, h * 0.032f)
                         )
-                        // Hide Arc Reactor white core
+                        // Hide Arc Reactor core
                         drawCircle(
                             color = maskColor,
                             radius = w * 0.088f,
@@ -481,109 +579,6 @@ fun IronManMark85Centerpiece(
                             center = rightShoulderNode
                         )
                     }
-
-                    // B. Dynamic Power-On Lighting & Illumination Layer
-                    if (ignition > 0.005f) {
-                        val activeIntensity = ignition * (if (isRunning) arcPulse else 1f)
-
-                        // 1. Arc Reactor Soft Ambient Glow Halo
-                        drawCircle(
-                            brush = Brush.radialGradient(
-                                colors = listOf(
-                                    stateColor.copy(alpha = (0.55f * activeIntensity).coerceIn(0f, 1f)),
-                                    stateColor.copy(alpha = (0.22f * activeIntensity).coerceIn(0f, 1f)),
-                                    Color.Transparent
-                                ),
-                                center = reactorCenter,
-                                radius = w * 0.28f
-                            ),
-                            center = reactorCenter,
-                            radius = w * 0.28f
-                        )
-
-                        // 2. Arc Reactor Glowing Outer Rim
-                        drawCircle(
-                            color = stateColor.copy(alpha = (0.85f * activeIntensity).coerceIn(0f, 1f)),
-                            radius = w * 0.082f,
-                            center = reactorCenter,
-                            style = Stroke(width = 2.dp.toPx())
-                        )
-
-                        // 3. Arc Reactor Intense Plasma Core
-                        drawCircle(
-                            brush = Brush.radialGradient(
-                                colors = listOf(
-                                    Color.White.copy(alpha = (0.98f * ignition).coerceIn(0f, 1f)),
-                                    Color(0xFFE8FFFF).copy(alpha = (0.92f * ignition).coerceIn(0f, 1f)),
-                                    stateColor.copy(alpha = (0.55f * ignition).coerceIn(0f, 1f)),
-                                    Color.Transparent
-                                ),
-                                center = reactorCenter,
-                                radius = w * 0.065f
-                            ),
-                            center = reactorCenter,
-                            radius = w * 0.065f
-                        )
-
-                        // 4. Eye Flares & Illumination
-                        val eyeRadius = w * 0.065f
-                        // Left Eye
-                        drawCircle(
-                            brush = Brush.radialGradient(
-                                colors = listOf(
-                                    Color.White.copy(alpha = (0.96f * ignition).coerceIn(0f, 1f)),
-                                    stateColor.copy(alpha = (0.75f * ignition).coerceIn(0f, 1f)),
-                                    Color.Transparent
-                                ),
-                                center = leftEyeCenter,
-                                radius = eyeRadius
-                            ),
-                            center = leftEyeCenter,
-                            radius = eyeRadius
-                        )
-                        // Right Eye
-                        drawCircle(
-                            brush = Brush.radialGradient(
-                                colors = listOf(
-                                    Color.White.copy(alpha = (0.96f * ignition).coerceIn(0f, 1f)),
-                                    stateColor.copy(alpha = (0.75f * ignition).coerceIn(0f, 1f)),
-                                    Color.Transparent
-                                ),
-                                center = rightEyeCenter,
-                                radius = eyeRadius
-                            ),
-                            center = rightEyeCenter,
-                            radius = eyeRadius
-                        )
-
-                        // 5. Shoulder Beacons
-                        drawCircle(
-                            brush = Brush.radialGradient(
-                                colors = listOf(
-                                    Color.White.copy(alpha = (0.9f * ignition).coerceIn(0f, 1f)),
-                                    stateColor.copy(alpha = (0.6f * ignition).coerceIn(0f, 1f)),
-                                    Color.Transparent
-                                ),
-                                center = leftShoulderNode,
-                                radius = w * 0.03f
-                            ),
-                            center = leftShoulderNode,
-                            radius = w * 0.03f
-                        )
-                        drawCircle(
-                            brush = Brush.radialGradient(
-                                colors = listOf(
-                                    Color.White.copy(alpha = (0.9f * ignition).coerceIn(0f, 1f)),
-                                    stateColor.copy(alpha = (0.6f * ignition).coerceIn(0f, 1f)),
-                                    Color.Transparent
-                                ),
-                                center = rightShoulderNode,
-                                radius = w * 0.03f
-                            ),
-                            center = rightShoulderNode,
-                            radius = w * 0.03f
-                        )
-                    }
                 }
             }
         }
@@ -593,6 +588,7 @@ fun IronManMark85Centerpiece(
 @Composable
 fun TacticalScanlineButton(
     isRunning: Boolean,
+    hasMicrophonePermission: Boolean,
     agentState: AgentState,
     onClick: () -> Unit
 ) {
@@ -618,58 +614,71 @@ fun TacticalScanlineButton(
         label = "BorderGlow"
     )
 
+    val buttonColor = when {
+        !hasMicrophonePermission -> MarkGold
+        isRunning -> Color(0xFFFF5252)
+        else -> Color(0xFF00DBE9)
+    }
+
+    val buttonText = when {
+        !hasMicrophonePermission -> "GRANT MIC PERMISSION"
+        isRunning -> "STOP AGENT"
+        else -> "START AGENT"
+    }
+
     Box(
         modifier = Modifier
             .fillMaxWidth(0.85f)
-            .height(56.dp)
-            .clip(RoundedCornerShape(28.dp))
+            .height(52.dp)
+            .clip(RoundedCornerShape(26.dp))
             .background(Color(0xFF0A0E14).copy(alpha = 0.85f))
             .border(
                 width = 1.dp,
-                color = if (isRunning) Color(0xFFFF5252).copy(alpha = borderGlow) else Color(0xFF00DBE9).copy(alpha = borderGlow),
-                shape = RoundedCornerShape(28.dp)
+                color = buttonColor.copy(alpha = borderGlow),
+                shape = RoundedCornerShape(26.dp)
             )
             .clickable(onClick = onClick)
-            .testTag(if (isRunning) "stop_jarvis_button" else "start_jarvis_button"),
+            .testTag(if (!hasMicrophonePermission) "grant_permission_button" else if (isRunning) "stop_jarvis_button" else "start_jarvis_button"),
         contentAlignment = Alignment.Center
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
-            modifier = Modifier.padding(horizontal = 24.dp)
+            modifier = Modifier.padding(horizontal = 20.dp)
         ) {
             // Glowing Indicator Dot
             Box(
                 modifier = Modifier
                     .size(8.dp)
                     .clip(CircleShape)
-                    .background(
-                        if (isRunning) Color(0xFFFF5252).copy(alpha = dotPulseAlpha)
-                        else Color(0xFFDBFCFF).copy(alpha = dotPulseAlpha)
-                    )
-            )
-
-            Spacer(modifier = Modifier.width(14.dp))
-
-            // Action Text
-            Text(
-                text = if (isRunning) "STOP AGENT" else "START AGENT",
-                style = MaterialTheme.typography.titleMedium.copy(
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace,
-                    letterSpacing = 3.sp,
-                    fontSize = 14.sp,
-                    color = if (isRunning) Color(0xFFFF5252) else Color(0xFFDBFCFF)
-                )
+                    .background(buttonColor.copy(alpha = dotPulseAlpha))
             )
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            // Rocket or Stop Icon
+            // Action Text
+            Text(
+                text = buttonText,
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                    letterSpacing = 2.sp,
+                    fontSize = 13.sp,
+                    color = if (isRunning) Color(0xFFFF5252) else Color(0xFFDBFCFF)
+                )
+            )
+
+            Spacer(modifier = Modifier.width(10.dp))
+
+            // Icon
             Icon(
-                imageVector = if (isRunning) Icons.Default.Stop else Icons.Default.RocketLaunch,
-                contentDescription = if (isRunning) "Stop" else "Launch",
-                tint = if (isRunning) Color(0xFFFF5252) else Color(0xFFDBFCFF),
+                imageVector = when {
+                    !hasMicrophonePermission -> Icons.Default.Mic
+                    isRunning -> Icons.Default.Stop
+                    else -> Icons.Default.RocketLaunch
+                },
+                contentDescription = buttonText,
+                tint = buttonColor,
                 modifier = Modifier.size(18.dp)
             )
         }
@@ -742,7 +751,7 @@ fun Mark85TelemetryHUD(
                 Text(
                     text = if (hasApiKey) "NVIDIA NIM READY" else "KEY UNCONFIGURED",
                     style = MaterialTheme.typography.labelSmall.copy(
-                        color = if (hasApiKey) MarkGoldAccent else JarvisThinkingAmber,
+                        color = if (hasApiKey) MarkGold else JarvisErrorRed,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 9.sp
                     )
@@ -773,9 +782,7 @@ fun Mark85ArcReactorCore(
     isActive: Boolean
 ) {
     IronManMark85Centerpiece(
-        agentState = agentState,
-        isRunning = isActive,
-        stateColor = stateColor
+        isRunning = isActive
     )
 }
 
@@ -786,8 +793,6 @@ fun JarvisArcReactorCore(
     isActive: Boolean
 ) {
     IronManMark85Centerpiece(
-        agentState = agentState,
-        isRunning = isActive,
-        stateColor = stateColor
+        isRunning = isActive
     )
 }

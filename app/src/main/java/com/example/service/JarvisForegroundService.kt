@@ -84,6 +84,17 @@ class JarvisForegroundService : Service() {
             ACTION_TRIGGER_LISTEN -> {
                 onWakeWordTriggered()
             }
+            ACTION_SEND_TEXT -> {
+                val text = intent?.getStringExtra(EXTRA_TEXT) ?: ""
+                if (text.isNotBlank()) {
+                    if (!_isRunning.value) {
+                        settings = JarvisSettings.load(this)
+                        startForegroundWithNotification()
+                        _isRunning.value = true
+                    }
+                    handleUserTranscript(text)
+                }
+            }
         }
 
         return START_STICKY
@@ -145,11 +156,13 @@ class JarvisForegroundService : Service() {
 
     private fun handleUserTranscript(transcript: String) {
         serviceScope.launch {
+            _liveTranscript.value = transcript
             agent.setState(AgentState.THINKING)
             _agentStateFlow.value = AgentState.THINKING
             updateNotification(AgentState.THINKING.label)
 
             val spokenResponse = agent.processUserSpeech(transcript, settings)
+            _liveResponse.value = spokenResponse
 
             _agentStateFlow.value = agent.state.value
             updateNotification(agent.state.value.label)
@@ -281,6 +294,8 @@ class JarvisForegroundService : Service() {
         const val ACTION_START = "com.example.jarvis.action.START"
         const val ACTION_STOP = "com.example.jarvis.action.STOP"
         const val ACTION_TRIGGER_LISTEN = "com.example.jarvis.action.TRIGGER_LISTEN"
+        const val ACTION_SEND_TEXT = "com.example.jarvis.action.SEND_TEXT"
+        const val EXTRA_TEXT = "com.example.jarvis.extra.TEXT"
 
         private var instance: JarvisForegroundService? = null
 
@@ -289,6 +304,12 @@ class JarvisForegroundService : Service() {
 
         private val _agentStateFlow = MutableStateFlow(AgentState.OFFLINE)
         val agentStateFlow: StateFlow<AgentState> = _agentStateFlow.asStateFlow()
+
+        private val _liveTranscript = MutableStateFlow("")
+        val liveTranscript: StateFlow<String> = _liveTranscript.asStateFlow()
+
+        private val _liveResponse = MutableStateFlow("")
+        val liveResponse: StateFlow<String> = _liveResponse.asStateFlow()
 
         fun startService(context: Context) {
             val intent = Intent(context, JarvisForegroundService::class.java).apply {
@@ -313,6 +334,18 @@ class JarvisForegroundService : Service() {
                 action = ACTION_TRIGGER_LISTEN
             }
             context.startService(intent)
+        }
+
+        fun sendTextCommand(context: Context, text: String) {
+            val intent = Intent(context, JarvisForegroundService::class.java).apply {
+                action = ACTION_SEND_TEXT
+                putExtra(EXTRA_TEXT, text)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
         }
     }
 }

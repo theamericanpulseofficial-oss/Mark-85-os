@@ -27,15 +27,25 @@ data class JarvisSettings(
         const val DEFAULT_TIMEOUT_SECONDS = 30
 
         val PRESET_AGENT_MODELS = listOf(
-            "nemotron-3-ultra-550b-a55b",
-            "nvidia/llama-3.1-nemotron-70b-instruct",
-            "nvidia/neva-22b",
+            "meta/llama-3.3-70b-instruct",
             "meta/llama-3.1-405b-instruct",
             "meta/llama-3.1-70b-instruct",
-            "mistralai/mistral-large-2-instruct"
+            "meta/llama-3.1-8b-instruct",
+            "deepseek-ai/deepseek-r1",
+            "deepseek-ai/deepseek-v3",
+            "mistralai/mixtral-8x22b-instruct",
+            "mistralai/mistral-large-2-instruct",
+            "nvidia/llama-3.1-nemotron-70b-instruct",
+            "nvidia/nemotron-4-340b-instruct",
+            "google/gemma-2-27b-it",
+            "qwen/qwen2.5-72b-instruct",
+            "microsoft/phi-3-medium-128k-instruct",
+            "nemotron-3-ultra-550b-a55b"
         )
 
         val PRESET_VOICE_MODELS = listOf(
+            "meta/llama-3.3-70b-instruct",
+            "meta/llama-3.1-8b-instruct",
             "nemotron-voicechat",
             "nvidia/riva-stt-tts-en",
             "fastconformer-hybrid-large-en"
