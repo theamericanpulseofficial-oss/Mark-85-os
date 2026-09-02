@@ -14,14 +14,15 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 /**
- * NVIDIA NIM / NVIDIA API implementation of [AIProvider].
- * Connects securely over HTTPS with configurable timeouts, retries, and tool schemas.
+ * Universal OpenAI-compatible & NVIDIA NIM implementation of [AIProvider].
+ * Connects securely over HTTPS with auto-fallback for reasoning models,
+ * intelligent endpoint resolution, and multi-provider key support.
  */
 class NvidiaProvider(
     private val debugLogging: Boolean = false
 ) : AIProvider {
 
-    override val providerName: String = "NVIDIA NIM"
+    override val providerName: String = "MARK 85 Neural Core"
 
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
@@ -34,6 +35,25 @@ class NvidiaProvider(
             .build()
     }
 
+    /**
+     * Resolves the most appropriate endpoint if user didn't customize it,
+     * based on API key prefix or model name.
+     */
+    private fun resolveEndpoint(customEndpoint: String, apiKey: String, model: String): String {
+        val trimmed = customEndpoint.trim()
+        if (trimmed.isNotBlank() && trimmed != DEFAULT_ENDPOINT) {
+            return trimmed
+        }
+        val keyTrimmed = apiKey.trim()
+        return when {
+            keyTrimmed.startsWith("sk-or-") -> "https://openrouter.ai/api/v1/chat/completions"
+            keyTrimmed.startsWith("gsk_") -> "https://api.groq.com/openai/v1/chat/completions"
+            keyTrimmed.startsWith("sk-proj-") || (keyTrimmed.startsWith("sk-") && !keyTrimmed.startsWith("sk-or-") && !keyTrimmed.startsWith("nvapi-")) -> "https://api.openai.com/v1/chat/completions"
+            model.startsWith("deepseek") && !keyTrimmed.startsWith("nvapi-") -> "https://api.deepseek.com/chat/completions"
+            else -> DEFAULT_ENDPOINT
+        }
+    }
+
     override suspend fun generateResponse(
         messages: List<ChatMessage>,
         tools: List<ToolDefinition>,
@@ -44,29 +64,61 @@ class NvidiaProvider(
     ): Result<AIResponse> = withContext(Dispatchers.IO) {
         if (apiKey.isBlank()) {
             return@withContext Result.failure(
-                IllegalArgumentException("NVIDIA API Key is missing. Please set it in Settings.")
+                IllegalArgumentException("AI API Key is missing. Please enter your API Key in Settings.")
             )
         }
 
-        val url = if (endpoint.isNotBlank()) endpoint else DEFAULT_ENDPOINT
+        val url = resolveEndpoint(endpoint, apiKey, model)
         val client = createHttpClient(timeoutSeconds)
-        val requestJson = buildRequestBody(messages, tools, model)
 
+        // Try standard request first with tools
+        val firstAttemptResult = executeApiCall(client, url, apiKey, model, messages, tools)
+        if (firstAttemptResult.isSuccess) {
+            return@withContext firstAttemptResult
+        }
+
+        val firstError = firstAttemptResult.exceptionOrNull()
+        val errorMsg = firstError?.message?.lowercase() ?: ""
+
+        // If failure was due to tools/function calling unsupported by this model (common with DeepSeek-R1 / custom models),
+        // automatically fallback and retry without tools!
+        if (tools.isNotEmpty() && (errorMsg.contains("tool") || errorMsg.contains("function") || errorMsg.contains("schema") || errorMsg.contains("400") || errorMsg.contains("422"))) {
+            if (debugLogging) {
+                Log.w(TAG, "Model $model rejected tools schema. Retrying without tools.")
+            }
+            val fallbackResult = executeApiCall(client, url, apiKey, model, messages, emptyList())
+            if (fallbackResult.isSuccess) {
+                return@withContext fallbackResult
+            }
+        }
+
+        return@withContext firstAttemptResult
+    }
+
+    private suspend fun executeApiCall(
+        client: OkHttpClient,
+        url: String,
+        apiKey: String,
+        model: String,
+        messages: List<ChatMessage>,
+        tools: List<ToolDefinition>
+    ): Result<AIResponse> {
+        val requestJson = buildRequestBody(messages, tools, model)
         var lastException: Exception? = null
-        val maxRetries = 2
+        val maxRetries = 1
 
         for (attempt in 0..maxRetries) {
             try {
                 val request = Request.Builder()
                     .url(url)
-                    .addHeader("Authorization", "Bearer $apiKey")
+                    .addHeader("Authorization", "Bearer ${apiKey.trim()}")
                     .addHeader("Content-Type", "application/json")
                     .addHeader("Accept", "application/json")
                     .post(requestJson.toString().toRequestBody(jsonMediaType))
                     .build()
 
                 if (debugLogging) {
-                    Log.d(TAG, "Sending request to NVIDIA endpoint: $url (Attempt ${attempt + 1})")
+                    Log.d(TAG, "Connecting to $url (Attempt ${attempt + 1}) for model: $model")
                 }
 
                 client.newCall(request).execute().use { response ->
@@ -75,31 +127,28 @@ class NvidiaProvider(
                     if (!response.isSuccessful) {
                         val errorMsg = parseErrorMessage(response.code, responseBody)
                         if (response.code in 500..599 && attempt < maxRetries) {
-                            delay(1000L * (attempt + 1))
+                            delay(1000L)
                             lastException = IOException(errorMsg)
-                            return@use // continue retry loop
+                            return@use
                         }
-                        return@withContext Result.failure(IOException(errorMsg))
+                        return Result.failure(IOException(errorMsg))
                     }
 
                     val aiResponse = parseSuccessResponse(responseBody)
-                    return@withContext Result.success(aiResponse)
+                    return Result.success(aiResponse)
                 }
             } catch (e: IOException) {
                 lastException = e
-                if (debugLogging) {
-                    Log.e(TAG, "Network error on attempt ${attempt + 1}: ${e.message}")
-                }
                 if (attempt < maxRetries) {
-                    delay(1000L * (attempt + 1))
+                    delay(1000L)
                 }
             } catch (e: Exception) {
-                return@withContext Result.failure(e)
+                return Result.failure(e)
             }
         }
 
-        Result.failure(
-            lastException ?: IOException("Failed to connect to NVIDIA API after $maxRetries retries.")
+        return Result.failure(
+            lastException ?: IOException("Failed to connect to AI server at $url.")
         )
     }
 
@@ -110,11 +159,11 @@ class NvidiaProvider(
         timeoutSeconds: Int
     ): Result<String> = withContext(Dispatchers.IO) {
         if (apiKey.isBlank()) {
-            return@withContext Result.failure(IllegalArgumentException("Please enter an NVIDIA API Key."))
+            return@withContext Result.failure(IllegalArgumentException("Please enter an API Key first."))
         }
 
         val testMessages = listOf(
-            ChatMessage.user("Respond with exactly: 'JARVIS online, systems nominal.'")
+            ChatMessage.user("Respond in one short sentence: 'J.A.R.V.I.S. neural core online, systems nominal.'")
         )
 
         val result = generateResponse(
@@ -128,8 +177,9 @@ class NvidiaProvider(
 
         result.fold(
             onSuccess = { response ->
-                val reply = response.content?.trim() ?: "Connection successful"
-                Result.success(reply)
+                val rawReply = response.content?.trim() ?: "Connection verified successfully."
+                val cleanReply = sanitizeThinking(rawReply)
+                Result.success(cleanReply)
             },
             onFailure = { error ->
                 Result.failure(error)
@@ -143,7 +193,7 @@ class NvidiaProvider(
         model: String
     ): JSONObject {
         val root = JSONObject()
-        root.put("model", model)
+        root.put("model", model.trim())
         root.put("temperature", 0.3)
         root.put("max_tokens", 1024)
 
@@ -178,6 +228,7 @@ class NvidiaProvider(
         }
         root.put("messages", messagesArray)
 
+        // Only include tools if provided and not empty
         if (tools.isNotEmpty()) {
             val toolsArray = JSONArray()
             for (tool in tools) {
@@ -208,7 +259,8 @@ class NvidiaProvider(
         val finishReason = firstChoice.optString("finish_reason", null)
         val message = firstChoice.optJSONObject("message")
 
-        val content = message?.optString("content")?.takeIf { it.isNotBlank() && it != "null" }
+        val rawContent = message?.optString("content")?.takeIf { it.isNotBlank() && it != "null" }
+        val cleanContent = if (rawContent != null) sanitizeThinking(rawContent) else null
         val toolCallsList = mutableListOf<ToolCall>()
 
         val toolCallsArray = message?.optJSONArray("tool_calls")
@@ -234,11 +286,19 @@ class NvidiaProvider(
         }
 
         return AIResponse(
-            content = content,
+            content = cleanContent,
             toolCalls = toolCallsList,
             finishReason = finishReason,
             rawResponse = responseBody
         )
+    }
+
+    /**
+     * Strips <think> ... </think> reasoning tokens from models like DeepSeek-R1
+     * so that the spoken voice output is clean and natural.
+     */
+    private fun sanitizeThinking(text: String): String {
+        return text.replace(Regex("(?s)<think>.*?</think>"), "").trim()
     }
 
     private fun parseErrorMessage(statusCode: Int, responseBody: String): String {
@@ -251,12 +311,12 @@ class NvidiaProvider(
         }
 
         return when (statusCode) {
-            401 -> "Invalid NVIDIA API key. Please verify your credentials in Settings."
-            403 -> "Access forbidden: Model unavailable or subscription permissions restricted."
-            404 -> "Model or endpoint not found on NVIDIA NIM. Check the model ID in Settings."
-            429 -> "Rate limit reached on NVIDIA API. Please try again in a few moments."
-            in 500..599 -> "NVIDIA AI service is temporarily unavailable (HTTP $statusCode). $parsedDetail"
-            else -> "NVIDIA API error (HTTP $statusCode): ${if (parsedDetail.isNotBlank()) parsedDetail else responseBody.take(120)}"
+            401 -> "Invalid API key (HTTP 401). Please check the API Key entered in Settings."
+            403 -> "Access forbidden (HTTP 403). The model may require special access or quota."
+            404 -> "Model not found (HTTP 404): ${if (parsedDetail.isNotBlank()) parsedDetail else responseBody.take(100)}"
+            429 -> "Rate limit or quota exceeded (HTTP 429). Please wait a moment or check your API credits."
+            in 500..599 -> "AI Server error (HTTP $statusCode): ${if (parsedDetail.isNotBlank()) parsedDetail else "Temporary service downtime"}"
+            else -> "API error (HTTP $statusCode): ${if (parsedDetail.isNotBlank()) parsedDetail else responseBody.take(120)}"
         }
     }
 

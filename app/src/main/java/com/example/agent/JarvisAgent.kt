@@ -43,9 +43,9 @@ class JarvisAgent(
         _state.value = newState
     }
 
-    fun resetConversation() {
+    fun resetConversation(customPrompt: String = SYSTEM_PROMPT) {
         conversationHistory.clear()
-        conversationHistory.add(ChatMessage.system(SYSTEM_PROMPT))
+        conversationHistory.add(ChatMessage.system(customPrompt.ifBlank { SYSTEM_PROMPT }))
         pendingConfirmationTool = null
     }
 
@@ -62,6 +62,10 @@ class JarvisAgent(
 
         if (trimmed.isBlank()) {
             return "I am listening, sir."
+        }
+
+        if (conversationHistory.isEmpty()) {
+            conversationHistory.add(ChatMessage.system(settings.systemPrompt.ifBlank { SYSTEM_PROMPT }))
         }
 
         // Handle active pending confirmation if user answers Yes/No

@@ -2,8 +2,10 @@ package com.example.ui
 
 import android.Manifest
 import android.content.pm.PackageManager
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,9 +25,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Hearing
+import androidx.compose.material.icons.filled.HelpOutline
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material.icons.filled.Psychology
@@ -33,7 +40,6 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -89,7 +95,8 @@ import com.example.ui.theme.JarvisDeepBackground
 import com.example.ui.theme.JarvisErrorRed
 import com.example.ui.theme.JarvisOnlineGreen
 import com.example.ui.theme.JarvisSurfaceDark
-import com.example.ui.theme.JarvisThinkingAmber
+import com.example.ui.theme.MarkCrimson
+import com.example.ui.theme.MarkGold
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
@@ -105,42 +112,52 @@ fun SettingsScreen(
     val currentSettings by viewModel.settings.collectAsState()
     val testState by viewModel.testState.collectAsState()
 
+    // 1 Unified API Key & 1 Unified Model
     var apiKey by remember(currentSettings) { mutableStateOf(currentSettings.nvidiaApiKey) }
     var showApiKey by remember { mutableStateOf(false) }
-    var agentModel by remember(currentSettings) { mutableStateOf(currentSettings.nvidiaModel) }
+    var selectedModel by remember(currentSettings) { mutableStateOf(currentSettings.nvidiaModel) }
     var isModelDropdownExpanded by remember { mutableStateOf(false) }
 
-    var voiceModel by remember(currentSettings) { mutableStateOf(currentSettings.voiceModel) }
-    var isVoiceDropdownExpanded by remember { mutableStateOf(false) }
+    // LiveKit credentials (Hardcoded default ready)
+    var livekitUrl by remember(currentSettings) { mutableStateOf(currentSettings.livekitUrl) }
+    var livekitApiKey by remember(currentSettings) { mutableStateOf(currentSettings.livekitApiKey) }
+    var livekitSecret by remember(currentSettings) { mutableStateOf(currentSettings.livekitSecret) }
+    var showLivekitSecret by remember { mutableStateOf(false) }
 
-    var picovoiceKey by remember(currentSettings) { mutableStateOf(currentSettings.picovoiceAccessKey) }
-    var showPicovoiceKey by remember { mutableStateOf(false) }
-    var wakeWordEnabled by remember(currentSettings) { mutableStateOf(currentSettings.wakeWordEnabled) }
-    var wakeWordSensitivity by remember(currentSettings) { mutableFloatStateOf(currentSettings.wakeWordSensitivity) }
-
-    var ttsSpeed by remember(currentSettings) { mutableFloatStateOf(currentSettings.ttsSpeed) }
-    var ttsPitch by remember(currentSettings) { mutableFloatStateOf(currentSettings.ttsPitch) }
-    var ttsVolume by remember(currentSettings) { mutableFloatStateOf(currentSettings.ttsVolume) }
-
+    // Advanced & Persona
+    var showAdvancedGuide by remember { mutableStateOf(false) }
+    var temperature by remember(currentSettings) { mutableFloatStateOf(currentSettings.temperature) }
+    var maxTokens by remember(currentSettings) { mutableIntStateOf(currentSettings.maxTokens) }
     var endpointUrl by remember(currentSettings) { mutableStateOf(currentSettings.nvidiaEndpoint) }
+    var systemPrompt by remember(currentSettings) { mutableStateOf(currentSettings.systemPrompt) }
     var timeoutSeconds by remember(currentSettings) { mutableIntStateOf(currentSettings.timeoutSeconds) }
     var debugLogging by remember(currentSettings) { mutableStateOf(currentSettings.debugLogging) }
+
+    // Voice & Wake Word
+    var wakeWordEnabled by remember(currentSettings) { mutableStateOf(currentSettings.wakeWordEnabled) }
+    var wakeWordSensitivity by remember(currentSettings) { mutableFloatStateOf(currentSettings.wakeWordSensitivity) }
+    var ttsSpeed by remember(currentSettings) { mutableFloatStateOf(currentSettings.ttsSpeed) }
+    var ttsPitch by remember(currentSettings) { mutableFloatStateOf(currentSettings.ttsPitch) }
 
     var showClearDialog by remember { mutableStateOf(false) }
 
     fun commitChanges() {
         val updated = currentSettings.copy(
             nvidiaApiKey = apiKey.trim(),
-            nvidiaModel = agentModel.trim(),
-            voiceModel = voiceModel.trim(),
-            picovoiceAccessKey = picovoiceKey.trim(),
+            nvidiaModel = selectedModel.trim(),
+            voiceModel = selectedModel.trim(),
+            livekitUrl = livekitUrl.trim(),
+            livekitApiKey = livekitApiKey.trim(),
+            livekitSecret = livekitSecret.trim(),
+            temperature = temperature,
+            maxTokens = maxTokens,
+            systemPrompt = systemPrompt.trim(),
+            nvidiaEndpoint = endpointUrl.trim(),
+            timeoutSeconds = timeoutSeconds,
             wakeWordEnabled = wakeWordEnabled,
             wakeWordSensitivity = wakeWordSensitivity,
             ttsSpeed = ttsSpeed,
             ttsPitch = ttsPitch,
-            ttsVolume = ttsVolume,
-            nvidiaEndpoint = endpointUrl.trim(),
-            timeoutSeconds = timeoutSeconds,
             debugLogging = debugLogging
         )
         viewModel.saveSettings(updated)
@@ -190,35 +207,38 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp)
+                .padding(horizontal = 18.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // 1. AI PROVIDER SECTION
-            SettingsSectionHeader(title = "AI PROVIDER — NVIDIA", icon = Icons.Default.Psychology)
+            // 1. SINGLE UNIFIED AI MODEL & API KEY SECTION
+            SettingsSectionHeader(title = "AI NEURAL ENGINE (1 API & 1 MODEL)", icon = Icons.Default.Psychology)
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = JarvisSurfaceDark),
-                shape = RoundedCornerShape(16.dp)
+                shape = RoundedCornerShape(16.dp),
+                border = CardDefaults.outlinedCardBorder().copy(
+                    brush = androidx.compose.ui.graphics.SolidColor(JarvisCyan.copy(alpha = 0.3f))
+                )
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Text(
-                        text = "Provider: NVIDIA NIM / NVIDIA API",
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            color = JarvisCyan,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace
+                        text = "Unified AI Engine: Works directly with NVIDIA NIM, OpenRouter, OpenAI, Groq, or DeepSeek keys.",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            color = Color(0xFFB9CACB),
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp
                         )
                     )
 
-                    // Secure NVIDIA API Key Input
+                    // 1 API Key Input Field
                     OutlinedTextField(
                         value = apiKey,
                         onValueChange = {
                             apiKey = it
                             commitChanges()
                         },
-                        label = { Text("NVIDIA API Key") },
-                        placeholder = { Text("nvapi-...") },
+                        label = { Text("AI API Key (NVIDIA / OpenAI / OpenRouter / Groq)") },
+                        placeholder = { Text("nvapi-... or sk-...") },
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("nvidia_api_key_input"),
@@ -236,18 +256,19 @@ fun SettingsScreen(
                         colors = outlinedTextFieldColors()
                     )
 
-                    // Agent Model Selector
+                    // 1 Model Selector Field
                     ExposedDropdownMenuBox(
                         expanded = isModelDropdownExpanded,
                         onExpandedChange = { isModelDropdownExpanded = it }
                     ) {
                         OutlinedTextField(
-                            value = agentModel,
+                            value = selectedModel,
                             onValueChange = {
-                                agentModel = it
+                                selectedModel = it
                                 commitChanges()
                             },
-                            label = { Text("Agent / Reasoning Model") },
+                            label = { Text("Active AI Model") },
+                            placeholder = { Text("Select or type model ID") },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .menuAnchor(MenuAnchorType.PrimaryEditable, true)
@@ -261,9 +282,19 @@ fun SettingsScreen(
                         ) {
                             JarvisSettings.PRESET_AGENT_MODELS.forEach { modelName ->
                                 DropdownMenuItem(
-                                    text = { Text(modelName) },
+                                    text = {
+                                        Column {
+                                            Text(
+                                                text = modelName,
+                                                fontWeight = if (modelName == selectedModel) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (modelName == selectedModel) JarvisCyan else TextPrimary,
+                                                fontFamily = FontFamily.Monospace,
+                                                fontSize = 12.sp
+                                            )
+                                        }
+                                    },
                                     onClick = {
-                                        agentModel = modelName
+                                        selectedModel = modelName
                                         isModelDropdownExpanded = false
                                         commitChanges()
                                     }
@@ -272,43 +303,7 @@ fun SettingsScreen(
                         }
                     }
 
-                    // Voice Model Selector
-                    ExposedDropdownMenuBox(
-                        expanded = isVoiceDropdownExpanded,
-                        onExpandedChange = { isVoiceDropdownExpanded = it }
-                    ) {
-                        OutlinedTextField(
-                            value = voiceModel,
-                            onValueChange = {
-                                voiceModel = it
-                                commitChanges()
-                            },
-                            label = { Text("Voice Model") },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .menuAnchor(MenuAnchorType.PrimaryEditable, true)
-                                .testTag("voice_model_input"),
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isVoiceDropdownExpanded) },
-                            colors = outlinedTextFieldColors()
-                        )
-                        ExposedDropdownMenu(
-                            expanded = isVoiceDropdownExpanded,
-                            onDismissRequest = { isVoiceDropdownExpanded = false }
-                        ) {
-                            JarvisSettings.PRESET_VOICE_MODELS.forEach { vmName ->
-                                DropdownMenuItem(
-                                    text = { Text(vmName) },
-                                    onClick = {
-                                        voiceModel = vmName
-                                        isVoiceDropdownExpanded = false
-                                        commitChanges()
-                                    }
-                                )
-                            }
-                        }
-                    }
-
-                    // Test API Button
+                    // Test AI Connection Button
                     Button(
                         onClick = {
                             commitChanges()
@@ -318,62 +313,82 @@ fun SettingsScreen(
                             .fillMaxWidth()
                             .testTag("test_api_button"),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = JarvisCyan.copy(alpha = 0.2f),
+                            containerColor = JarvisCyan.copy(alpha = 0.22f),
                             contentColor = JarvisCyan
                         ),
                         shape = RoundedCornerShape(10.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(imageVector = Icons.Default.NetworkCheck, contentDescription = "Test API")
+                            Icon(imageVector = Icons.Default.NetworkCheck, contentDescription = "Test AI Model", modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Test NVIDIA API Connection", fontWeight = FontWeight.Bold)
+                            Text("Test Selected Model Connection", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
                         }
                     }
 
-                    // Connection test state
+                    // Connection test state feedback
                     when (val state = testState) {
                         is ConnectionTestState.Testing -> {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.Center,
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
                             ) {
                                 CircularProgressIndicator(
-                                    modifier = Modifier.size(18.dp),
+                                    modifier = Modifier.size(16.dp),
                                     color = JarvisCyan,
                                     strokeWidth = 2.dp
                                 )
                                 Spacer(modifier = Modifier.width(10.dp))
-                                Text("Connecting to NVIDIA NIM...", color = TextSecondary, fontSize = 12.sp)
+                                Text("Connecting & verifying model...", color = TextSecondary, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
                             }
                         }
                         is ConnectionTestState.Success -> {
-                            Text(
-                                text = "✓ ${state.message}",
-                                color = JarvisOnlineGreen,
-                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold)
-                            )
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = JarvisOnlineGreen.copy(alpha = 0.12f)),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = JarvisOnlineGreen, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = state.message,
+                                        color = JarvisOnlineGreen,
+                                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)
+                                    )
+                                }
+                            }
                         }
                         is ConnectionTestState.Error -> {
-                            Text(
-                                text = "✕ ${state.message}",
-                                color = JarvisErrorRed,
-                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold)
-                            )
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = JarvisErrorRed.copy(alpha = 0.12f)),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Info, contentDescription = null, tint = JarvisErrorRed, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = state.message,
+                                        color = JarvisErrorRed,
+                                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                                    )
+                                }
+                            }
                         }
                         ConnectionTestState.Idle -> {}
                     }
                 }
             }
 
-            // 2. WAKE WORD SECTION
-            SettingsSectionHeader(title = "WAKE WORD (HEY JARVIS)", icon = Icons.Default.Hearing)
+            // 2. LIVEKIT STREAMING INTEGRATION (HARDCODED & CONFIGURED)
+            SettingsSectionHeader(title = "LIVEKIT CLOUD STREAMING", icon = Icons.Default.CloudDone)
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = JarvisSurfaceDark),
                 shape = RoundedCornerShape(16.dp)
             ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
@@ -381,73 +396,246 @@ fun SettingsScreen(
                     ) {
                         Column {
                             Text(
-                                text = "Enable 'Hey Jarvis' Wake Word",
+                                text = "LiveKit Real-Time WebRTC",
                                 color = TextPrimary,
-                                fontWeight = FontWeight.SemiBold
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 13.sp
                             )
                             Text(
-                                text = "Runs locally on device in background",
+                                text = "High-speed voice stream pipeline",
                                 color = TextSecondary,
-                                fontSize = 12.sp
+                                fontSize = 11.sp
                             )
                         }
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(JarvisOnlineGreen.copy(alpha = 0.18f))
+                                .border(1.dp, JarvisOnlineGreen.copy(alpha = 0.5f), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text("READY ✓", color = JarvisOnlineGreen, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = livekitUrl,
+                        onValueChange = {
+                            livekitUrl = it
+                            commitChanges()
+                        },
+                        label = { Text("LiveKit Cloud Server URL") },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = outlinedTextFieldColors()
+                    )
+
+                    OutlinedTextField(
+                        value = livekitApiKey,
+                        onValueChange = {
+                            livekitApiKey = it
+                            commitChanges()
+                        },
+                        label = { Text("LiveKit API Key") },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = outlinedTextFieldColors()
+                    )
+
+                    OutlinedTextField(
+                        value = livekitSecret,
+                        onValueChange = {
+                            livekitSecret = it
+                            commitChanges()
+                        },
+                        label = { Text("LiveKit Secret") },
+                        visualTransformation = if (showLivekitSecret) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { showLivekitSecret = !showLivekitSecret }) {
+                                Icon(
+                                    imageVector = if (showLivekitSecret) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    contentDescription = "Toggle Secret",
+                                    tint = TextSecondary
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = outlinedTextFieldColors()
+                    )
+                }
+            }
+
+            // 3. ADVANCED SETTINGS & EXPLANATION GUIDE
+            SettingsSectionHeader(title = "ADVANCED CONFIGURATION", icon = Icons.Default.Tune)
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = JarvisSurfaceDark),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+
+                    // Explanatory expandable banner: "Advance Settings Kya Hai?"
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showAdvancedGuide = !showAdvancedGuide },
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF0D1822)),
+                        shape = RoundedCornerShape(10.dp),
+                        border = CardDefaults.outlinedCardBorder().copy(
+                            brush = androidx.compose.ui.graphics.SolidColor(MarkGold.copy(alpha = 0.5f))
+                        )
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.HelpOutline, contentDescription = null, tint = MarkGold, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Advance Settings Kya Hai? (Guide)",
+                                        color = MarkGold,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                                Icon(
+                                    imageVector = if (showAdvancedGuide) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                    contentDescription = "Toggle Guide",
+                                    tint = MarkGold
+                                )
+                            }
+
+                            AnimatedVisibility(visible = showAdvancedGuide) {
+                                Column(
+                                    modifier = Modifier.padding(top = 10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text(
+                                        text = "1. Temperature (0.0 - 1.0):\n• AI ki creativity control karta hai. Low (0.2-0.3) = Phone tools aur direct commands ke liye accurate. High (0.7) = Creative conversation.",
+                                        color = TextPrimary,
+                                        fontSize = 11.sp,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                    Text(
+                                        text = "2. Max Tokens (128 - 4096):\n• AI ke response ki maximum length. Voice assistant ke liye 512-1024 best hai taaki voice fast reply kare.",
+                                        color = TextPrimary,
+                                        fontSize = 11.sp,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                    Text(
+                                        text = "3. Custom Endpoint URL:\n• Agar NVIDIA ke alawa OpenRouter, Groq, DeepSeek, ya apna local server (Ollama) use karna ho toh yahan URL daalein.",
+                                        color = TextPrimary,
+                                        fontSize = 11.sp,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                    Text(
+                                        text = "4. System Persona / Prompt:\n• Mark 85 OS Jarvis ka attitude, bolne ka tareeka aur system rules yahan se change kar sakte hain.",
+                                        color = TextPrimary,
+                                        fontSize = 11.sp,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Temperature Slider
+                    Column {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("AI Temperature (Creativity)", color = TextPrimary, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                            Text(String.format("%.2f", temperature), color = JarvisCyan, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                        }
+                        Slider(
+                            value = temperature,
+                            onValueChange = {
+                                temperature = it
+                                commitChanges()
+                            },
+                            valueRange = 0.0f..1.0f,
+                            colors = SliderDefaults.colors(thumbColor = JarvisCyan, activeTrackColor = JarvisCyan)
+                        )
+                    }
+
+                    // Max Tokens Slider
+                    Column {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Max Output Tokens", color = TextPrimary, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                            Text("$maxTokens tokens", color = JarvisCyan, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                        }
+                        Slider(
+                            value = maxTokens.toFloat(),
+                            onValueChange = {
+                                maxTokens = it.toInt()
+                                commitChanges()
+                            },
+                            valueRange = 256f..4096f,
+                            steps = 14,
+                            colors = SliderDefaults.colors(thumbColor = JarvisCyan, activeTrackColor = JarvisCyan)
+                        )
+                    }
+
+                    // Custom API Endpoint
+                    OutlinedTextField(
+                        value = endpointUrl,
+                        onValueChange = {
+                            endpointUrl = it
+                            commitChanges()
+                        },
+                        label = { Text("API Endpoint URL") },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = outlinedTextFieldColors()
+                    )
+
+                    // System Prompt / Persona
+                    OutlinedTextField(
+                        value = systemPrompt,
+                        onValueChange = {
+                            systemPrompt = it
+                            commitChanges()
+                        },
+                        label = { Text("System Persona & Prompt") },
+                        maxLines = 4,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = outlinedTextFieldColors()
+                    )
+
+                    // Debug Logging
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text("Debug Logging", color = TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            Text("Log network diagnostics in Logcat", color = TextSecondary, fontSize = 11.sp)
+                        }
                         Switch(
-                            checked = wakeWordEnabled,
+                            checked = debugLogging,
                             onCheckedChange = {
-                                wakeWordEnabled = it
+                                debugLogging = it
                                 commitChanges()
                             },
                             colors = SwitchDefaults.colors(checkedThumbColor = JarvisCyan, checkedTrackColor = JarvisCyan.copy(alpha = 0.5f))
                         )
                     }
 
-                    OutlinedTextField(
-                        value = picovoiceKey,
-                        onValueChange = {
-                            picovoiceKey = it
-                            commitChanges()
-                        },
-                        label = { Text("Picovoice Porcupine AccessKey (Optional)") },
-                        placeholder = { Text("Enter AccessKey for Porcupine wake word") },
+                    OutlinedButton(
+                        onClick = { showClearDialog = true },
                         modifier = Modifier.fillMaxWidth(),
-                        visualTransformation = if (showPicovoiceKey) VisualTransformation.None else PasswordVisualTransformation(),
-                        trailingIcon = {
-                            IconButton(onClick = { showPicovoiceKey = !showPicovoiceKey }) {
-                                Icon(
-                                    imageVector = if (showPicovoiceKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                    contentDescription = "Toggle Key Visibility",
-                                    tint = TextSecondary
-                                )
-                            }
-                        },
-                        colors = outlinedTextFieldColors()
-                    )
-
-                    Column {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Wake Word Sensitivity", color = TextPrimary, fontSize = 13.sp)
-                            Text("${(wakeWordSensitivity * 100).toInt()}%", color = JarvisCyan, fontSize = 13.sp)
-                        }
-                        Slider(
-                            value = wakeWordSensitivity,
-                            onValueChange = {
-                                wakeWordSensitivity = it
-                                commitChanges()
-                            },
-                            valueRange = 0.1f..1.0f,
-                            colors = SliderDefaults.colors(
-                                thumbColor = JarvisCyan,
-                                activeTrackColor = JarvisCyan
-                            )
-                        )
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = JarvisErrorRed),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.DeleteSweep, contentDescription = "Clear Keys")
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Reset & Clear Stored Keys")
                     }
                 }
             }
 
-            // 3. VOICE & SPEECH SECTION
+            // 4. WAKE WORD & VOICE TTS
             SettingsSectionHeader(title = "VOICE & SPEECH (TTS)", icon = Icons.Default.GraphicEq)
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -457,8 +645,8 @@ fun SettingsScreen(
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Column {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Speech Rate (Speed)", color = TextPrimary, fontSize = 13.sp)
-                            Text(String.format("%.1fx", ttsSpeed), color = JarvisCyan, fontSize = 13.sp)
+                            Text("Speech Rate (Speed)", color = TextPrimary, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                            Text(String.format("%.1fx", ttsSpeed), color = JarvisCyan, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
                         }
                         Slider(
                             value = ttsSpeed,
@@ -473,8 +661,8 @@ fun SettingsScreen(
 
                     Column {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Voice Pitch", color = TextPrimary, fontSize = 13.sp)
-                            Text(String.format("%.1fx", ttsPitch), color = JarvisCyan, fontSize = 13.sp)
+                            Text("Voice Pitch", color = TextPrimary, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                            Text(String.format("%.1fx", ttsPitch), color = JarvisCyan, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
                         }
                         Slider(
                             value = ttsPitch,
@@ -489,8 +677,8 @@ fun SettingsScreen(
                 }
             }
 
-            // 4. PERMISSIONS SECTION
-            SettingsSectionHeader(title = "ANDROID PERMISSIONS", icon = Icons.Default.Security)
+            // 5. ANDROID PERMISSIONS
+            SettingsSectionHeader(title = "SYSTEM PERMISSIONS", icon = Icons.Default.Security)
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = JarvisSurfaceDark),
@@ -499,7 +687,7 @@ fun SettingsScreen(
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     PermissionStatusRow(
                         name = "Microphone (RECORD_AUDIO)",
-                        desc = "Required for wake-word and voice commands",
+                        desc = "Required for voice commands & wake-word",
                         permission = Manifest.permission.RECORD_AUDIO,
                         onRequest = { onRequestPermission(Manifest.permission.RECORD_AUDIO) }
                     )
@@ -524,57 +712,6 @@ fun SettingsScreen(
                 }
             }
 
-            // 5. ADVANCED SECTION
-            SettingsSectionHeader(title = "ADVANCED SETTINGS", icon = Icons.Default.Tune)
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = JarvisSurfaceDark),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    OutlinedTextField(
-                        value = endpointUrl,
-                        onValueChange = {
-                            endpointUrl = it
-                            commitChanges()
-                        },
-                        label = { Text("NVIDIA API Endpoint") },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = outlinedTextFieldColors()
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column {
-                            Text("Debug Logging", color = TextPrimary, fontWeight = FontWeight.SemiBold)
-                            Text("Never logs keys or sensitive data", color = TextSecondary, fontSize = 12.sp)
-                        }
-                        Switch(
-                            checked = debugLogging,
-                            onCheckedChange = {
-                                debugLogging = it
-                                commitChanges()
-                            },
-                            colors = SwitchDefaults.colors(checkedThumbColor = JarvisCyan, checkedTrackColor = JarvisCyan.copy(alpha = 0.5f))
-                        )
-                    }
-
-                    OutlinedButton(
-                        onClick = { showClearDialog = true },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = JarvisErrorRed),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Icon(imageVector = Icons.Default.DeleteSweep, contentDescription = "Clear Keys")
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Clear Stored API Keys")
-                    }
-                }
-            }
-
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
@@ -585,7 +722,7 @@ fun SettingsScreen(
             title = { Text("Clear All Stored Keys?", color = TextPrimary) },
             text = {
                 Text(
-                    "This will delete your locally stored NVIDIA and Picovoice API keys from encrypted storage.",
+                    "This will reset your API key and restore defaults in secure storage.",
                     color = TextSecondary
                 )
             },
@@ -594,7 +731,6 @@ fun SettingsScreen(
                     onClick = {
                         viewModel.clearAllStoredKeys()
                         apiKey = ""
-                        picovoiceKey = ""
                         showClearDialog = false
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = JarvisErrorRed)
@@ -666,7 +802,7 @@ fun PermissionStatusRow(
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("Granted", color = JarvisOnlineGreen, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("Granted ✓", color = JarvisOnlineGreen, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
             }
         } else {
             OutlinedButton(
