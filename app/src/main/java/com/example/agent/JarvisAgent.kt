@@ -121,12 +121,24 @@ class JarvisAgent(
                 handleAIResponse(response, isDeviceLocked)
             },
             onFailure = { error ->
-                Log.e(TAG, "AI request failed: ${error.message}")
+                Log.e(TAG, "AI request failed: ${error.message}", error)
                 _state.value = AgentState.ERROR
                 val voiceError = if (settings.nvidiaApiKey.isBlank()) {
-                    "Sir, please configure your NVIDIA API key in the settings."
+                    "Sir, please configure your AI API key in the settings."
                 } else {
-                    "Sir, I can't reach the AI server right now."
+                    val raw = error.message ?: ""
+                    when {
+                        raw.contains("401") || raw.contains("Invalid API key") ->
+                            "Sir, your API key appears to be invalid or unauthorized."
+                        raw.contains("429") || raw.contains("Rate limit") || raw.contains("quota") ->
+                            "Sir, the neural server rate limit or quota has been reached."
+                        raw.contains("404") ->
+                            "Sir, the requested model was not found on this endpoint."
+                        raw.contains("timeout") || raw.contains("timed out") ->
+                            "Sir, the neural server timed out. Please try your request again."
+                        else ->
+                            "Sir, I encountered an issue connecting to the AI server: ${raw.take(60)}."
+                    }
                 }
                 _lastResponse.value = voiceError
                 voiceError
@@ -188,11 +200,61 @@ class JarvisAgent(
             return speech
         } else {
             val textReply = response.content ?: "At your service, sir."
+
+            // Fallback tool call extraction: if model outputted tool instructions or JSON in text
+            val detectedTool = tryParseToolFromText(textReply)
+            if (detectedTool != null) {
+                _state.value = AgentState.EXECUTING
+                val tool = toolRegistry.getTool(detectedTool.functionName)
+                if (tool != null && tool.requiresConfirmation && isDeviceLocked) {
+                    _state.value = AgentState.SPEAKING
+                    val speech = "Sir, please unlock your device before executing this action."
+                    _lastResponse.value = speech
+                    return speech
+                }
+                val executionResult = toolRegistry.executeTool(
+                    name = detectedTool.functionName,
+                    argumentsJson = detectedTool.argumentsJson
+                )
+                val speech = executionResult.speechResponse ?: "Action completed, sir."
+                conversationHistory.add(ChatMessage.assistant(speech))
+                _state.value = AgentState.SPEAKING
+                _lastResponse.value = speech
+                return speech
+            }
+
             conversationHistory.add(ChatMessage.assistant(textReply))
             _state.value = AgentState.SPEAKING
             _lastResponse.value = textReply
             return textReply
         }
+    }
+
+    private fun tryParseToolFromText(text: String): com.example.ai.ToolCall? {
+        val trimmed = text.trim()
+        val jsonPattern = Regex("""\{[\s\S]*?"(?:action|tool|function)"\s*:\s*"([a-zA-Z0-9_]+)"[\s\S]*?\}""")
+        val match = jsonPattern.find(trimmed)
+        if (match != null) {
+            try {
+                val json = JSONObject(match.value)
+                val actionName = json.optString("action").ifBlank { json.optString("tool").ifBlank { json.optString("function") } }
+                val args = json.optJSONObject("args")?.toString()
+                    ?: json.optJSONObject("parameters")?.toString()
+                    ?: json.optJSONObject("arguments")?.toString()
+                    ?: json.toString()
+                if (actionName.isNotBlank() && toolRegistry.getTool(actionName) != null) {
+                    return com.example.ai.ToolCall(
+                        id = "call_text_${System.currentTimeMillis()}",
+                        type = "function",
+                        functionName = actionName,
+                        argumentsJson = args
+                    )
+                }
+            } catch (e: Exception) {
+                // Ignore parse errors
+            }
+        }
+        return null
     }
 
     private fun isAffirmative(text: String): Boolean {

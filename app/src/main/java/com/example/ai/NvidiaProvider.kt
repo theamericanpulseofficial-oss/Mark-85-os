@@ -27,10 +27,11 @@ class NvidiaProvider(
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
     private fun createHttpClient(timeoutSeconds: Int): OkHttpClient {
+        val effectiveTimeout = timeoutSeconds.coerceAtLeast(60)
         return OkHttpClient.Builder()
-            .connectTimeout(timeoutSeconds.toLong(), TimeUnit.SECONDS)
-            .readTimeout(timeoutSeconds.toLong(), TimeUnit.SECONDS)
-            .writeTimeout(timeoutSeconds.toLong(), TimeUnit.SECONDS)
+            .connectTimeout(effectiveTimeout.toLong(), TimeUnit.SECONDS)
+            .readTimeout(effectiveTimeout.toLong(), TimeUnit.SECONDS)
+            .writeTimeout(effectiveTimeout.toLong(), TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
             .build()
     }
@@ -130,53 +131,52 @@ class NvidiaProvider(
 
         val url = resolveEndpoint(endpoint, apiKey, model)
         val activeModel = normalizeModelName(model, url, apiKey)
-        val client = createHttpClient(timeoutSeconds)
+        val effectiveTimeout = timeoutSeconds.coerceAtLeast(60)
+        val client = createHttpClient(effectiveTimeout)
 
-        // Try standard request first with tools
-        val firstAttemptResult = executeApiCall(client, url, apiKey, activeModel, messages, tools)
-        if (firstAttemptResult.isSuccess) {
-            return@withContext firstAttemptResult
-        }
-
-        val firstError = firstAttemptResult.exceptionOrNull()
-        val errorMsg = firstError?.message?.lowercase() ?: ""
-
-        // If failure was 404 (Model not found on that endpoint), auto-recover by trying the primary model
-        if (errorMsg.contains("404") || errorMsg.contains("not found")) {
-            val fallbackModel = if (url.contains("nvidia.com") || apiKey.trim().startsWith("nvapi-")) {
-                "meta/llama-3.3-70b-instruct"
-            } else if (url.contains("groq.com")) {
-                "llama-3.3-70b-versatile"
-            } else if (url.contains("openai.com")) {
-                "gpt-4o-mini"
-            } else {
-                "meta-llama/llama-3.3-70b-instruct"
+        // Attempt 1: Standard request with tools if tools provided
+        if (tools.isNotEmpty()) {
+            val toolsResult = executeApiCall(client, url, apiKey, activeModel, messages, tools)
+            if (toolsResult.isSuccess) {
+                return@withContext toolsResult
             }
 
-            if (fallbackModel != activeModel) {
-                if (debugLogging) {
-                    Log.w(TAG, "Model $activeModel returned 404. Auto-recovering with $fallbackModel")
-                }
-                val recoveryResult = executeApiCall(client, url, apiKey, fallbackModel, messages, tools)
-                if (recoveryResult.isSuccess) {
-                    return@withContext recoveryResult
-                }
-            }
-        }
-
-        // If failure was due to tools/function calling unsupported by this model (common with DeepSeek-R1 / custom models),
-        // automatically fallback and retry without tools!
-        if (tools.isNotEmpty() && (errorMsg.contains("tool") || errorMsg.contains("function") || errorMsg.contains("schema") || errorMsg.contains("400") || errorMsg.contains("422"))) {
+            val toolsError = toolsResult.exceptionOrNull()
+            val toolsErrorMsg = toolsError?.message?.lowercase() ?: ""
             if (debugLogging) {
-                Log.w(TAG, "Model $activeModel rejected tools schema. Retrying without tools.")
-            }
-            val fallbackResult = executeApiCall(client, url, apiKey, activeModel, messages, emptyList())
-            if (fallbackResult.isSuccess) {
-                return@withContext fallbackResult
+                Log.w(TAG, "Request with tools failed ($toolsErrorMsg). Retrying without tools.")
             }
         }
 
-        return@withContext firstAttemptResult
+        // Attempt 2: Request without tools (universal OpenAI compatible format)
+        val plainTextResult = executeApiCall(client, url, apiKey, activeModel, messages, emptyList())
+        if (plainTextResult.isSuccess) {
+            return@withContext plainTextResult
+        }
+
+        val textError = plainTextResult.exceptionOrNull()
+        val textErrorMsg = textError?.message?.lowercase() ?: ""
+
+        // Attempt 3: If 404 (model not found) or server error / timeout, auto-recover with high-speed model
+        val fastFallbackModel = when {
+            url.contains("nvidia.com") || apiKey.trim().startsWith("nvapi-") -> "meta/llama-3.1-8b-instruct"
+            url.contains("groq.com") || apiKey.trim().startsWith("gsk_") -> "llama-3.1-8b-instant"
+            url.contains("openai.com") -> "gpt-4o-mini"
+            url.contains("openrouter.ai") -> "meta-llama/llama-3.1-8b-instruct"
+            else -> "meta/llama-3.1-8b-instruct"
+        }
+
+        if (fastFallbackModel != activeModel) {
+            if (debugLogging) {
+                Log.w(TAG, "Model $activeModel failed ($textErrorMsg). Auto-recovering with: $fastFallbackModel")
+            }
+            val recoveryResult = executeApiCall(client, url, apiKey, fastFallbackModel, messages, emptyList())
+            if (recoveryResult.isSuccess) {
+                return@withContext recoveryResult
+            }
+        }
+
+        return@withContext plainTextResult
     }
 
     private suspend fun executeApiCall(
@@ -284,29 +284,41 @@ class NvidiaProvider(
         val messagesArray = JSONArray()
         for (msg in messages) {
             val msgObj = JSONObject()
-            msgObj.put("role", msg.role)
-            if (msg.content != null) {
-                msgObj.put("content", msg.content)
-            }
-            if (msg.name != null) {
-                msgObj.put("name", msg.name)
-            }
-            if (msg.toolCallId != null) {
-                msgObj.put("tool_call_id", msg.toolCallId)
-            }
-            if (!msg.toolCalls.isNullOrEmpty()) {
-                val toolCallsArray = JSONArray()
-                for (tc in msg.toolCalls) {
-                    val tcObj = JSONObject()
-                    tcObj.put("id", tc.id)
-                    tcObj.put("type", tc.type)
-                    val fnObj = JSONObject()
-                    fnObj.put("name", tc.functionName)
-                    fnObj.put("arguments", tc.argumentsJson)
-                    tcObj.put("function", fnObj)
-                    toolCallsArray.put(tcObj)
+            if (tools.isEmpty()) {
+                // When tools is empty (fallback or text mode), normalize roles so standard LLMs don't reject tool schema
+                val role = if (msg.role == "tool") "user" else msg.role
+                msgObj.put("role", role)
+                val content = if (msg.role == "tool") {
+                    "[Action result for ${msg.name ?: "system"}: ${msg.content ?: "completed"}]"
+                } else {
+                    msg.content ?: ""
                 }
-                msgObj.put("tool_calls", toolCallsArray)
+                msgObj.put("content", content)
+            } else {
+                msgObj.put("role", msg.role)
+                if (msg.content != null) {
+                    msgObj.put("content", msg.content)
+                }
+                if (msg.name != null) {
+                    msgObj.put("name", msg.name)
+                }
+                if (msg.toolCallId != null) {
+                    msgObj.put("tool_call_id", msg.toolCallId)
+                }
+                if (!msg.toolCalls.isNullOrEmpty()) {
+                    val toolCallsArray = JSONArray()
+                    for (tc in msg.toolCalls) {
+                        val tcObj = JSONObject()
+                        tcObj.put("id", tc.id)
+                        tcObj.put("type", tc.type)
+                        val fnObj = JSONObject()
+                        fnObj.put("name", tc.functionName)
+                        fnObj.put("arguments", tc.argumentsJson)
+                        tcObj.put("function", fnObj)
+                        toolCallsArray.put(tcObj)
+                    }
+                    msgObj.put("tool_calls", toolCallsArray)
+                }
             }
             messagesArray.put(msgObj)
         }
@@ -389,7 +401,21 @@ class NvidiaProvider(
         val parsedDetail = try {
             val root = JSONObject(responseBody)
             val errorObj = root.optJSONObject("error")
-            errorObj?.optString("message") ?: root.optString("detail", "")
+            val msg = errorObj?.optString("message")
+            if (!msg.isNullOrBlank()) {
+                msg
+            } else {
+                val detail = root.opt("detail")
+                when (detail) {
+                    is String -> detail
+                    is JSONArray -> {
+                        val first = detail.optJSONObject(0)
+                        first?.optString("msg") ?: detail.toString()
+                    }
+                    is JSONObject -> detail.optString("msg", detail.toString())
+                    else -> ""
+                }
+            }
         } catch (e: Exception) {
             ""
         }
@@ -398,6 +424,7 @@ class NvidiaProvider(
             401 -> "Invalid API key (HTTP 401). Please check the API Key entered in Settings."
             403 -> "Access forbidden (HTTP 403). The model may require special access or quota."
             404 -> "Model not found (HTTP 404): ${if (parsedDetail.isNotBlank()) parsedDetail else responseBody.take(100)}"
+            422 -> "Unprocessable request (HTTP 422): ${if (parsedDetail.isNotBlank()) parsedDetail else responseBody.take(100)}"
             429 -> "Rate limit or quota exceeded (HTTP 429). Please wait a moment or check your API credits."
             in 500..599 -> "AI Server error (HTTP $statusCode): ${if (parsedDetail.isNotBlank()) parsedDetail else "Temporary service downtime"}"
             else -> "API error (HTTP $statusCode): ${if (parsedDetail.isNotBlank()) parsedDetail else responseBody.take(120)}"

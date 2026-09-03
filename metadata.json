@@ -1,6 +1,6 @@
 {
-  "name": "Mark 85 OS",
-  "description": "Mark 85 OS — Advanced AI Voice Phone Agent powered by NVIDIA NIM and local wake-word detection.",
+  "name": "Mark OS",
+  "description": "Mark OS — Advanced AI Voice Phone Agent powered by NVIDIA NIM and local wake-word detection.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

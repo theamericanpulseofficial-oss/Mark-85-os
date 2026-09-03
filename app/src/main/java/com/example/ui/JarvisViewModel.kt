@@ -62,6 +62,11 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     fun saveSettings(newSettings: JarvisSettings) {
         _settings.value = newSettings
         JarvisSettings.save(context, newSettings)
+        try {
+            JarvisForegroundService.reloadSettings(context)
+        } catch (e: Exception) {
+            // Service may not be running yet
+        }
     }
 
     fun testNvidiaConnection() {

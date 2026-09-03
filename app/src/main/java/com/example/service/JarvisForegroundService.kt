@@ -70,10 +70,11 @@ class JarvisForegroundService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action ?: ACTION_START
+        // Always ensure freshest settings are loaded
+        settings = JarvisSettings.load(this)
 
         when (action) {
             ACTION_START -> {
-                settings = JarvisSettings.load(this)
                 startForegroundWithNotification()
                 _isRunning.value = true
                 startStandbyWakeWord()
@@ -88,12 +89,16 @@ class JarvisForegroundService : Service() {
                 val text = intent?.getStringExtra(EXTRA_TEXT) ?: ""
                 if (text.isNotBlank()) {
                     if (!_isRunning.value) {
-                        settings = JarvisSettings.load(this)
                         startForegroundWithNotification()
                         _isRunning.value = true
                     }
                     handleUserTranscript(text)
                 }
+            }
+            ACTION_RELOAD_SETTINGS -> {
+                Log.d(TAG, "Reloading settings from storage...")
+                ttsEngine.setRate(settings.ttsSpeed)
+                ttsEngine.setPitch(settings.ttsPitch)
             }
         }
 
@@ -156,6 +161,8 @@ class JarvisForegroundService : Service() {
 
     private fun handleUserTranscript(transcript: String) {
         serviceScope.launch {
+            // Always reload the freshest settings (including new API keys and models)
+            settings = JarvisSettings.load(this@JarvisForegroundService)
             _liveTranscript.value = transcript
             agent.setState(AgentState.THINKING)
             _agentStateFlow.value = AgentState.THINKING
@@ -295,6 +302,7 @@ class JarvisForegroundService : Service() {
         const val ACTION_STOP = "com.example.jarvis.action.STOP"
         const val ACTION_TRIGGER_LISTEN = "com.example.jarvis.action.TRIGGER_LISTEN"
         const val ACTION_SEND_TEXT = "com.example.jarvis.action.SEND_TEXT"
+        const val ACTION_RELOAD_SETTINGS = "com.example.jarvis.action.RELOAD_SETTINGS"
         const val EXTRA_TEXT = "com.example.jarvis.extra.TEXT"
 
         private var instance: JarvisForegroundService? = null
@@ -346,6 +354,13 @@ class JarvisForegroundService : Service() {
             } else {
                 context.startService(intent)
             }
+        }
+
+        fun reloadSettings(context: Context) {
+            val intent = Intent(context, JarvisForegroundService::class.java).apply {
+                action = ACTION_RELOAD_SETTINGS
+            }
+            context.startService(intent)
         }
     }
 }

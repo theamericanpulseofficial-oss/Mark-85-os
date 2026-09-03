@@ -34,7 +34,7 @@ data class JarvisSettings(
     companion object {
         const val DEFAULT_NVIDIA_AGENT_MODEL = "meta/llama-3.3-70b-instruct"
         const val DEFAULT_NVIDIA_ENDPOINT = "https://integrate.api.nvidia.com/v1/chat/completions"
-        const val DEFAULT_TIMEOUT_SECONDS = 30
+        const val DEFAULT_TIMEOUT_SECONDS = 60
         const val DEFAULT_TEMPERATURE = 0.3f
         const val DEFAULT_MAX_TOKENS = 1024
 
