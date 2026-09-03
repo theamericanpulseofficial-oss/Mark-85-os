@@ -36,22 +36,82 @@ class NvidiaProvider(
     }
 
     /**
-     * Resolves the most appropriate endpoint if user didn't customize it,
-     * based on API key prefix or model name.
+     * Resolves the most appropriate endpoint automatically based on API key prefix or model name.
+     * Also sanitizes any user or custom endpoint so it always points to the valid chat/completions path.
      */
     private fun resolveEndpoint(customEndpoint: String, apiKey: String, model: String): String {
         val trimmed = customEndpoint.trim()
-        if (trimmed.isNotBlank() && trimmed != DEFAULT_ENDPOINT) {
-            return trimmed
-        }
         val keyTrimmed = apiKey.trim()
-        return when {
-            keyTrimmed.startsWith("sk-or-") -> "https://openrouter.ai/api/v1/chat/completions"
-            keyTrimmed.startsWith("gsk_") -> "https://api.groq.com/openai/v1/chat/completions"
-            keyTrimmed.startsWith("sk-proj-") || (keyTrimmed.startsWith("sk-") && !keyTrimmed.startsWith("sk-or-") && !keyTrimmed.startsWith("nvapi-")) -> "https://api.openai.com/v1/chat/completions"
-            model.startsWith("deepseek") && !keyTrimmed.startsWith("nvapi-") -> "https://api.deepseek.com/chat/completions"
-            else -> DEFAULT_ENDPOINT
+
+        val rawEndpoint = if (trimmed.isNotBlank() && trimmed != DEFAULT_ENDPOINT) {
+            trimmed
+        } else {
+            when {
+                keyTrimmed.startsWith("sk-or-") -> "https://openrouter.ai/api/v1/chat/completions"
+                keyTrimmed.startsWith("gsk_") -> "https://api.groq.com/openai/v1/chat/completions"
+                keyTrimmed.startsWith("sk-proj-") || (keyTrimmed.startsWith("sk-") && !keyTrimmed.startsWith("sk-or-") && !keyTrimmed.startsWith("nvapi-")) -> "https://api.openai.com/v1/chat/completions"
+                model.startsWith("deepseek") && !keyTrimmed.startsWith("nvapi-") -> "https://api.deepseek.com/chat/completions"
+                else -> DEFAULT_ENDPOINT
+            }
         }
+
+        // Sanitize endpoint URL to prevent 404 errors caused by missing paths or trailing slashes
+        var sanitized = rawEndpoint.trim().removeSuffix("/")
+        if (!sanitized.endsWith("/chat/completions")) {
+            sanitized = if (sanitized.endsWith("/v1")) {
+                "$sanitized/chat/completions"
+            } else {
+                "$sanitized/v1/chat/completions"
+            }
+        }
+        return sanitized
+    }
+
+    /**
+     * Normalizes user-entered model names so they match exact provider requirements
+     * without causing HTTP 404 (Model not found).
+     */
+    fun normalizeModelName(rawModel: String, endpointUrl: String, apiKey: String): String {
+        val clean = rawModel.trim().trim('"', '\'', ' ')
+        if (clean.isBlank()) return "meta/llama-3.3-70b-instruct"
+
+        val isNvidia = endpointUrl.contains("nvidia.com") || apiKey.trim().startsWith("nvapi-")
+        val isGroq = endpointUrl.contains("groq.com") || apiKey.trim().startsWith("gsk_")
+        val isOpener = endpointUrl.contains("openrouter.ai") || apiKey.trim().startsWith("sk-or-")
+
+        if (isNvidia) {
+            val lower = clean.lowercase()
+            return when {
+                // If user already typed the full vendor prefix, keep it
+                clean.contains("/") -> clean
+                lower.contains("3.3") && lower.contains("70b") -> "meta/llama-3.3-70b-instruct"
+                lower.contains("3.1") && lower.contains("8b") -> "meta/llama-3.1-8b-instruct"
+                lower.contains("3.1") && lower.contains("70b") -> "meta/llama-3.1-70b-instruct"
+                lower.contains("deepseek") && lower.contains("r1") -> "deepseek-ai/deepseek-r1"
+                lower.contains("deepseek") && lower.contains("v3") -> "deepseek-ai/deepseek-v3"
+                lower.contains("mistral") && (lower.contains("large") || lower.contains("2")) -> "mistralai/mistral-large-2-instruct"
+                lower.contains("nemotron") -> "nvidia/llama-3.1-nemotron-70b-instruct"
+                lower.contains("qwen") && lower.contains("72b") -> "qwen/qwen2.5-72b-instruct"
+                lower.contains("gemma") -> "google/gemma-2-27b-it"
+                lower.contains("llama") -> "meta/llama-3.3-70b-instruct"
+                else -> "meta/$clean"
+            }
+        } else if (isGroq) {
+            val lower = clean.lowercase()
+            return when {
+                lower.contains("70b") -> "llama-3.3-70b-versatile"
+                lower.contains("8b") -> "llama-3.1-8b-instant"
+                lower.contains("mixtral") -> "mixtral-8x7b-32768"
+                else -> clean
+            }
+        } else if (isOpener) {
+            // OpenRouter uses meta-llama/ rather than meta/
+            if (clean.startsWith("meta/")) {
+                return clean.replace("meta/", "meta-llama/")
+            }
+        }
+
+        return clean
     }
 
     override suspend fun generateResponse(
@@ -69,10 +129,11 @@ class NvidiaProvider(
         }
 
         val url = resolveEndpoint(endpoint, apiKey, model)
+        val activeModel = normalizeModelName(model, url, apiKey)
         val client = createHttpClient(timeoutSeconds)
 
         // Try standard request first with tools
-        val firstAttemptResult = executeApiCall(client, url, apiKey, model, messages, tools)
+        val firstAttemptResult = executeApiCall(client, url, apiKey, activeModel, messages, tools)
         if (firstAttemptResult.isSuccess) {
             return@withContext firstAttemptResult
         }
@@ -80,13 +141,36 @@ class NvidiaProvider(
         val firstError = firstAttemptResult.exceptionOrNull()
         val errorMsg = firstError?.message?.lowercase() ?: ""
 
+        // If failure was 404 (Model not found on that endpoint), auto-recover by trying the primary model
+        if (errorMsg.contains("404") || errorMsg.contains("not found")) {
+            val fallbackModel = if (url.contains("nvidia.com") || apiKey.trim().startsWith("nvapi-")) {
+                "meta/llama-3.3-70b-instruct"
+            } else if (url.contains("groq.com")) {
+                "llama-3.3-70b-versatile"
+            } else if (url.contains("openai.com")) {
+                "gpt-4o-mini"
+            } else {
+                "meta-llama/llama-3.3-70b-instruct"
+            }
+
+            if (fallbackModel != activeModel) {
+                if (debugLogging) {
+                    Log.w(TAG, "Model $activeModel returned 404. Auto-recovering with $fallbackModel")
+                }
+                val recoveryResult = executeApiCall(client, url, apiKey, fallbackModel, messages, tools)
+                if (recoveryResult.isSuccess) {
+                    return@withContext recoveryResult
+                }
+            }
+        }
+
         // If failure was due to tools/function calling unsupported by this model (common with DeepSeek-R1 / custom models),
         // automatically fallback and retry without tools!
         if (tools.isNotEmpty() && (errorMsg.contains("tool") || errorMsg.contains("function") || errorMsg.contains("schema") || errorMsg.contains("400") || errorMsg.contains("422"))) {
             if (debugLogging) {
-                Log.w(TAG, "Model $model rejected tools schema. Retrying without tools.")
+                Log.w(TAG, "Model $activeModel rejected tools schema. Retrying without tools.")
             }
-            val fallbackResult = executeApiCall(client, url, apiKey, model, messages, emptyList())
+            val fallbackResult = executeApiCall(client, url, apiKey, activeModel, messages, emptyList())
             if (fallbackResult.isSuccess) {
                 return@withContext fallbackResult
             }

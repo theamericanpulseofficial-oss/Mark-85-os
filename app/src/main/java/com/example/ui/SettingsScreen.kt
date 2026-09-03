@@ -116,7 +116,6 @@ fun SettingsScreen(
     var apiKey by remember(currentSettings) { mutableStateOf(currentSettings.nvidiaApiKey) }
     var showApiKey by remember { mutableStateOf(false) }
     var selectedModel by remember(currentSettings) { mutableStateOf(currentSettings.nvidiaModel) }
-    var isModelDropdownExpanded by remember { mutableStateOf(false) }
 
     // LiveKit credentials (Hardcoded default ready)
     var livekitUrl by remember(currentSettings) { mutableStateOf(currentSettings.livekitUrl) }
@@ -125,7 +124,6 @@ fun SettingsScreen(
     var showLivekitSecret by remember { mutableStateOf(false) }
 
     // Advanced & Persona
-    var showAdvancedGuide by remember { mutableStateOf(false) }
     var temperature by remember(currentSettings) { mutableFloatStateOf(currentSettings.temperature) }
     var maxTokens by remember(currentSettings) { mutableIntStateOf(currentSettings.maxTokens) }
     var endpointUrl by remember(currentSettings) { mutableStateOf(currentSettings.nvidiaEndpoint) }
@@ -256,52 +254,21 @@ fun SettingsScreen(
                         colors = outlinedTextFieldColors()
                     )
 
-                    // 1 Model Selector Field
-                    ExposedDropdownMenuBox(
-                        expanded = isModelDropdownExpanded,
-                        onExpandedChange = { isModelDropdownExpanded = it }
-                    ) {
-                        OutlinedTextField(
-                            value = selectedModel,
-                            onValueChange = {
-                                selectedModel = it
-                                commitChanges()
-                            },
-                            label = { Text("Active AI Model") },
-                            placeholder = { Text("Select or type model ID") },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .menuAnchor(MenuAnchorType.PrimaryEditable, true)
-                                .testTag("agent_model_input"),
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isModelDropdownExpanded) },
-                            colors = outlinedTextFieldColors()
-                        )
-                        ExposedDropdownMenu(
-                            expanded = isModelDropdownExpanded,
-                            onDismissRequest = { isModelDropdownExpanded = false }
-                        ) {
-                            JarvisSettings.PRESET_AGENT_MODELS.forEach { modelName ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Column {
-                                            Text(
-                                                text = modelName,
-                                                fontWeight = if (modelName == selectedModel) FontWeight.Bold else FontWeight.Normal,
-                                                color = if (modelName == selectedModel) JarvisCyan else TextPrimary,
-                                                fontFamily = FontFamily.Monospace,
-                                                fontSize = 12.sp
-                                            )
-                                        }
-                                    },
-                                    onClick = {
-                                        selectedModel = modelName
-                                        isModelDropdownExpanded = false
-                                        commitChanges()
-                                    }
-                                )
-                            }
-                        }
-                    }
+                    // 1 Model Input Field - Direct plain text field (No Dropdown)
+                    OutlinedTextField(
+                        value = selectedModel,
+                        onValueChange = {
+                            selectedModel = it
+                            commitChanges()
+                        },
+                        label = { Text("AI Model Name") },
+                        placeholder = { Text("e.g. meta/llama-3.3-70b-instruct") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("agent_model_input"),
+                        singleLine = true,
+                        colors = outlinedTextFieldColors()
+                    )
 
                     // Test AI Connection Button
                     Button(
@@ -321,7 +288,7 @@ fun SettingsScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(imageVector = Icons.Default.NetworkCheck, contentDescription = "Test AI Model", modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Test Selected Model Connection", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                            Text("Test Model Connection", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
                         }
                     }
 
@@ -339,7 +306,7 @@ fun SettingsScreen(
                                     strokeWidth = 2.dp
                                 )
                                 Spacer(modifier = Modifier.width(10.dp))
-                                Text("Connecting & verifying model...", color = TextSecondary, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                                Text("Connecting & testing model...", color = TextSecondary, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
                             }
                         }
                         is ConnectionTestState.Success -> {
@@ -381,14 +348,14 @@ fun SettingsScreen(
                 }
             }
 
-            // 2. LIVEKIT STREAMING INTEGRATION (HARDCODED & CONFIGURED)
+            // 2. LIVEKIT STREAMING STATUS (HARDCODED & READY)
             SettingsSectionHeader(title = "LIVEKIT CLOUD STREAMING", icon = Icons.Default.CloudDone)
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = JarvisSurfaceDark),
                 shape = RoundedCornerShape(16.dp)
             ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
@@ -403,7 +370,7 @@ fun SettingsScreen(
                                 fontSize = 13.sp
                             )
                             Text(
-                                text = "High-speed voice stream pipeline",
+                                text = "High-speed voice audio pipeline",
                                 color = TextSecondary,
                                 fontSize = 11.sp
                             )
@@ -419,219 +386,12 @@ fun SettingsScreen(
                         }
                     }
 
-                    OutlinedTextField(
-                        value = livekitUrl,
-                        onValueChange = {
-                            livekitUrl = it
-                            commitChanges()
-                        },
-                        label = { Text("LiveKit Cloud Server URL") },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = outlinedTextFieldColors()
+                    Text(
+                        text = "Server: wss://jarvis-dnr09c6u.livekit.cloud\nPre-configured for bidirectional real-time audio.",
+                        color = Color(0xFF8FA3AD),
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace
                     )
-
-                    OutlinedTextField(
-                        value = livekitApiKey,
-                        onValueChange = {
-                            livekitApiKey = it
-                            commitChanges()
-                        },
-                        label = { Text("LiveKit API Key") },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = outlinedTextFieldColors()
-                    )
-
-                    OutlinedTextField(
-                        value = livekitSecret,
-                        onValueChange = {
-                            livekitSecret = it
-                            commitChanges()
-                        },
-                        label = { Text("LiveKit Secret") },
-                        visualTransformation = if (showLivekitSecret) VisualTransformation.None else PasswordVisualTransformation(),
-                        trailingIcon = {
-                            IconButton(onClick = { showLivekitSecret = !showLivekitSecret }) {
-                                Icon(
-                                    imageVector = if (showLivekitSecret) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                    contentDescription = "Toggle Secret",
-                                    tint = TextSecondary
-                                )
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = outlinedTextFieldColors()
-                    )
-                }
-            }
-
-            // 3. ADVANCED SETTINGS & EXPLANATION GUIDE
-            SettingsSectionHeader(title = "ADVANCED CONFIGURATION", icon = Icons.Default.Tune)
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = JarvisSurfaceDark),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-
-                    // Explanatory expandable banner: "Advance Settings Kya Hai?"
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { showAdvancedGuide = !showAdvancedGuide },
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF0D1822)),
-                        shape = RoundedCornerShape(10.dp),
-                        border = CardDefaults.outlinedCardBorder().copy(
-                            brush = androidx.compose.ui.graphics.SolidColor(MarkGold.copy(alpha = 0.5f))
-                        )
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.HelpOutline, contentDescription = null, tint = MarkGold, modifier = Modifier.size(18.dp))
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = "Advance Settings Kya Hai? (Guide)",
-                                        color = MarkGold,
-                                        fontWeight = FontWeight.Bold,
-                                        fontFamily = FontFamily.Monospace,
-                                        fontSize = 12.sp
-                                    )
-                                }
-                                Icon(
-                                    imageVector = if (showAdvancedGuide) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                                    contentDescription = "Toggle Guide",
-                                    tint = MarkGold
-                                )
-                            }
-
-                            AnimatedVisibility(visible = showAdvancedGuide) {
-                                Column(
-                                    modifier = Modifier.padding(top = 10.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Text(
-                                        text = "1. Temperature (0.0 - 1.0):\n• AI ki creativity control karta hai. Low (0.2-0.3) = Phone tools aur direct commands ke liye accurate. High (0.7) = Creative conversation.",
-                                        color = TextPrimary,
-                                        fontSize = 11.sp,
-                                        fontFamily = FontFamily.Monospace
-                                    )
-                                    Text(
-                                        text = "2. Max Tokens (128 - 4096):\n• AI ke response ki maximum length. Voice assistant ke liye 512-1024 best hai taaki voice fast reply kare.",
-                                        color = TextPrimary,
-                                        fontSize = 11.sp,
-                                        fontFamily = FontFamily.Monospace
-                                    )
-                                    Text(
-                                        text = "3. Custom Endpoint URL:\n• Agar NVIDIA ke alawa OpenRouter, Groq, DeepSeek, ya apna local server (Ollama) use karna ho toh yahan URL daalein.",
-                                        color = TextPrimary,
-                                        fontSize = 11.sp,
-                                        fontFamily = FontFamily.Monospace
-                                    )
-                                    Text(
-                                        text = "4. System Persona / Prompt:\n• Mark 85 OS Jarvis ka attitude, bolne ka tareeka aur system rules yahan se change kar sakte hain.",
-                                        color = TextPrimary,
-                                        fontSize = 11.sp,
-                                        fontFamily = FontFamily.Monospace
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // Temperature Slider
-                    Column {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("AI Temperature (Creativity)", color = TextPrimary, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-                            Text(String.format("%.2f", temperature), color = JarvisCyan, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-                        }
-                        Slider(
-                            value = temperature,
-                            onValueChange = {
-                                temperature = it
-                                commitChanges()
-                            },
-                            valueRange = 0.0f..1.0f,
-                            colors = SliderDefaults.colors(thumbColor = JarvisCyan, activeTrackColor = JarvisCyan)
-                        )
-                    }
-
-                    // Max Tokens Slider
-                    Column {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Max Output Tokens", color = TextPrimary, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-                            Text("$maxTokens tokens", color = JarvisCyan, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-                        }
-                        Slider(
-                            value = maxTokens.toFloat(),
-                            onValueChange = {
-                                maxTokens = it.toInt()
-                                commitChanges()
-                            },
-                            valueRange = 256f..4096f,
-                            steps = 14,
-                            colors = SliderDefaults.colors(thumbColor = JarvisCyan, activeTrackColor = JarvisCyan)
-                        )
-                    }
-
-                    // Custom API Endpoint
-                    OutlinedTextField(
-                        value = endpointUrl,
-                        onValueChange = {
-                            endpointUrl = it
-                            commitChanges()
-                        },
-                        label = { Text("API Endpoint URL") },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = outlinedTextFieldColors()
-                    )
-
-                    // System Prompt / Persona
-                    OutlinedTextField(
-                        value = systemPrompt,
-                        onValueChange = {
-                            systemPrompt = it
-                            commitChanges()
-                        },
-                        label = { Text("System Persona & Prompt") },
-                        maxLines = 4,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = outlinedTextFieldColors()
-                    )
-
-                    // Debug Logging
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column {
-                            Text("Debug Logging", color = TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                            Text("Log network diagnostics in Logcat", color = TextSecondary, fontSize = 11.sp)
-                        }
-                        Switch(
-                            checked = debugLogging,
-                            onCheckedChange = {
-                                debugLogging = it
-                                commitChanges()
-                            },
-                            colors = SwitchDefaults.colors(checkedThumbColor = JarvisCyan, checkedTrackColor = JarvisCyan.copy(alpha = 0.5f))
-                        )
-                    }
-
-                    OutlinedButton(
-                        onClick = { showClearDialog = true },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = JarvisErrorRed),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Icon(imageVector = Icons.Default.DeleteSweep, contentDescription = "Clear Keys")
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Reset & Clear Stored Keys")
-                    }
                 }
             }
 
@@ -710,6 +470,17 @@ fun SettingsScreen(
                         onRequest = { onRequestPermission(Manifest.permission.READ_CONTACTS) }
                     )
                 }
+            }
+
+            OutlinedButton(
+                onClick = { showClearDialog = true },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = JarvisErrorRed),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Icon(imageVector = Icons.Default.DeleteSweep, contentDescription = "Clear Keys")
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Reset & Clear Stored Keys")
             }
 
             Spacer(modifier = Modifier.height(24.dp))

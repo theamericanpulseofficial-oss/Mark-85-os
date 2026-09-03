@@ -67,7 +67,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     fun testNvidiaConnection() {
         val currentSettings = _settings.value
         if (currentSettings.nvidiaApiKey.isBlank()) {
-            _testState.value = ConnectionTestState.Error("Please enter your NVIDIA API key first.")
+            _testState.value = ConnectionTestState.Error("Please enter your AI API key first.")
             return
         }
 
