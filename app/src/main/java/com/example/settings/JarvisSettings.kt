@@ -25,13 +25,44 @@ data class JarvisSettings(
     val ttsSpeed: Float = 1.0f,
     val ttsPitch: Float = 1.0f,
     val ttsVolume: Float = 1.0f,
-    val debugLogging: Boolean = false
+    val debugLogging: Boolean = false,
+    val ttsProvider: String = TTS_PROVIDER_INWORLD,
+    val inworldApiKey: String = "",
+    val inworldVoiceId: String = DEFAULT_INWORLD_VOICE,
+    val inworldModel: String = DEFAULT_INWORLD_MODEL,
+    val inworldEndpoint: String = DEFAULT_INWORLD_ENDPOINT
 ) {
     // Convenience aliases
     val aiApiKey: String get() = nvidiaApiKey
     val aiModel: String get() = nvidiaModel
 
     companion object {
+        const val TTS_PROVIDER_INWORLD = "inworld"
+        const val TTS_PROVIDER_ANDROID = "android"
+
+        const val DEFAULT_INWORLD_VOICE = "Dennis"
+        const val DEFAULT_INWORLD_MODEL = "inworld-tts-2"
+        const val DEFAULT_INWORLD_ENDPOINT = "https://api.inworld.ai/tts/v1/voice"
+
+        val PRESET_INWORLD_VOICES = listOf(
+            "Dennis" to "Dennis (JARVIS British)",
+            "Edward" to "Edward (British Refined)",
+            "Craig" to "Craig (British Authoritative)",
+            "Oliver" to "Oliver (British Crisp)",
+            "Sarah" to "Sarah (Articulate Female)",
+            "Ashley" to "Ashley (Conversational Female)",
+            "bm_george" to "bm_george (Kokoro British Male)",
+            "am_adam" to "am_adam (Kokoro US Male)",
+            "af_heart" to "af_heart (Kokoro US Female)"
+        )
+
+        val PRESET_INWORLD_MODELS = listOf(
+            "inworld-tts-2",
+            "inworld-tts-1.5-max",
+            "inworld-tts-1.5-mini",
+            "kokoro"
+        )
+
         const val DEFAULT_NVIDIA_AGENT_MODEL = "meta/llama-3.3-70b-instruct"
         const val DEFAULT_NVIDIA_ENDPOINT = "https://integrate.api.nvidia.com/v1/chat/completions"
         const val DEFAULT_TIMEOUT_SECONDS = 60
@@ -115,7 +146,12 @@ Keep your verbal spoken answers brief, natural, elegant, confident, and actionab
                 ttsSpeed = prefs.getFloat(SecurePreferencesHelper.KEY_TTS_SPEED, 1.0f),
                 ttsPitch = prefs.getFloat(SecurePreferencesHelper.KEY_TTS_PITCH, 1.0f),
                 ttsVolume = prefs.getFloat(SecurePreferencesHelper.KEY_TTS_VOLUME, 1.0f),
-                debugLogging = prefs.getBoolean(SecurePreferencesHelper.KEY_DEBUG_LOGGING, false)
+                debugLogging = prefs.getBoolean(SecurePreferencesHelper.KEY_DEBUG_LOGGING, false),
+                ttsProvider = prefs.getString(SecurePreferencesHelper.KEY_TTS_PROVIDER, TTS_PROVIDER_INWORLD),
+                inworldApiKey = prefs.getString(SecurePreferencesHelper.KEY_INWORLD_API_KEY, ""),
+                inworldVoiceId = prefs.getString(SecurePreferencesHelper.KEY_INWORLD_VOICE_ID, DEFAULT_INWORLD_VOICE),
+                inworldModel = prefs.getString(SecurePreferencesHelper.KEY_INWORLD_MODEL, DEFAULT_INWORLD_MODEL),
+                inworldEndpoint = prefs.getString(SecurePreferencesHelper.KEY_INWORLD_ENDPOINT, DEFAULT_INWORLD_ENDPOINT)
             )
         }
 
@@ -139,6 +175,11 @@ Keep your verbal spoken answers brief, natural, elegant, confident, and actionab
             prefs.saveFloat(SecurePreferencesHelper.KEY_TTS_PITCH, settings.ttsPitch)
             prefs.saveFloat(SecurePreferencesHelper.KEY_TTS_VOLUME, settings.ttsVolume)
             prefs.saveBoolean(SecurePreferencesHelper.KEY_DEBUG_LOGGING, settings.debugLogging)
+            prefs.saveString(SecurePreferencesHelper.KEY_TTS_PROVIDER, settings.ttsProvider)
+            prefs.saveString(SecurePreferencesHelper.KEY_INWORLD_API_KEY, settings.inworldApiKey)
+            prefs.saveString(SecurePreferencesHelper.KEY_INWORLD_VOICE_ID, settings.inworldVoiceId)
+            prefs.saveString(SecurePreferencesHelper.KEY_INWORLD_MODEL, settings.inworldModel)
+            prefs.saveString(SecurePreferencesHelper.KEY_INWORLD_ENDPOINT, settings.inworldEndpoint)
         }
     }
 }

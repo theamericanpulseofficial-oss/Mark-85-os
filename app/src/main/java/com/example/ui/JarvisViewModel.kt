@@ -35,6 +35,9 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     private val _testState = MutableStateFlow<ConnectionTestState>(ConnectionTestState.Idle)
     val testState: StateFlow<ConnectionTestState> = _testState.asStateFlow()
 
+    private val _ttsTestState = MutableStateFlow<ConnectionTestState>(ConnectionTestState.Idle)
+    val ttsTestState: StateFlow<ConnectionTestState> = _ttsTestState.asStateFlow()
+
     fun toggleAssistant(start: Boolean) {
         if (start) {
             JarvisForegroundService.startService(context)
@@ -101,6 +104,39 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     fun resetTestState() {
         _testState.value = ConnectionTestState.Idle
+    }
+
+    fun testInworldVoice(customPhrase: String? = null) {
+        val currentSettings = _settings.value
+        if (currentSettings.inworldApiKey.isBlank()) {
+            _ttsTestState.value = ConnectionTestState.Error("Please enter your Inworld / Kokoro API key first.")
+            return
+        }
+
+        _ttsTestState.value = ConnectionTestState.Testing
+        viewModelScope.launch {
+            val phrase = customPhrase ?: "Greetings, sir. Inworld neural voice pipeline is active and nominal."
+            val result = com.example.audio.InworldKokoroTtsEngine.testVoiceSynthesis(
+                context = context,
+                settings = currentSettings,
+                testText = phrase
+            )
+
+            result.fold(
+                onSuccess = { reply ->
+                    _ttsTestState.value = ConnectionTestState.Success(reply)
+                },
+                onFailure = { error ->
+                    _ttsTestState.value = ConnectionTestState.Error(
+                        error.message ?: "Voice synthesis test failed."
+                    )
+                }
+            )
+        }
+    }
+
+    fun resetTtsTestState() {
+        _ttsTestState.value = ConnectionTestState.Idle
     }
 
     fun clearAllStoredKeys() {

@@ -18,7 +18,7 @@ import com.example.R
 import com.example.agent.AgentState
 import com.example.agent.JarvisAgent
 import com.example.audio.AndroidSpeechRecognizerEngine
-import com.example.audio.AndroidTextToSpeechEngine
+import com.example.audio.InworldKokoroTtsEngine
 import com.example.audio.SpeechToTextEngine
 import com.example.audio.TextToSpeechEngine
 import com.example.settings.JarvisSettings
@@ -58,10 +58,9 @@ class JarvisForegroundService : Service() {
         settings = JarvisSettings.load(this)
         toolRegistry = ToolRegistry(this)
         agent = JarvisAgent(this, toolRegistry)
-        ttsEngine = AndroidTextToSpeechEngine(
+        ttsEngine = InworldKokoroTtsEngine(
             context = this,
-            speechRate = settings.ttsSpeed,
-            pitch = settings.ttsPitch
+            settings = settings
         )
         sttEngine = AndroidSpeechRecognizerEngine(this)
 
@@ -97,6 +96,7 @@ class JarvisForegroundService : Service() {
             }
             ACTION_RELOAD_SETTINGS -> {
                 Log.d(TAG, "Reloading settings from storage...")
+                (ttsEngine as? InworldKokoroTtsEngine)?.updateSettings(settings)
                 ttsEngine.setRate(settings.ttsSpeed)
                 ttsEngine.setPitch(settings.ttsPitch)
             }
@@ -163,6 +163,7 @@ class JarvisForegroundService : Service() {
         serviceScope.launch {
             // Always reload the freshest settings (including new API keys and models)
             settings = JarvisSettings.load(this@JarvisForegroundService)
+            (ttsEngine as? InworldKokoroTtsEngine)?.updateSettings(settings)
             _liveTranscript.value = transcript
             agent.setState(AgentState.THINKING)
             _agentStateFlow.value = AgentState.THINKING

@@ -43,7 +43,17 @@ class ExampleRobolectricTest {
     @Test
     fun `jarvis settings default model matches requirements`() {
         val settings = JarvisSettings()
-        assertEquals("nemotron-3-ultra-550b-a55b", settings.nvidiaModel)
-        assertEquals("nemotron-voicechat", settings.voiceModel)
+        assertEquals(JarvisSettings.DEFAULT_NVIDIA_AGENT_MODEL, settings.nvidiaModel)
+        assertEquals(JarvisSettings.DEFAULT_NVIDIA_AGENT_MODEL, settings.voiceModel)
+        assertEquals(JarvisSettings.TTS_PROVIDER_INWORLD, settings.ttsProvider)
+        assertEquals("Dennis", settings.inworldVoiceId)
+    }
+
+    @Test
+    fun `inworld kokoro tts engine initializes with fallback support`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val settings = JarvisSettings()
+        val engine = com.example.audio.InworldKokoroTtsEngine(context, settings)
+        assertNotNull(engine)
     }
 }

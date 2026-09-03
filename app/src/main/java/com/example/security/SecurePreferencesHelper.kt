@@ -158,5 +158,10 @@ class SecurePreferencesHelper(private val context: Context) {
         const val KEY_TTS_PITCH = "tts_pitch"
         const val KEY_TTS_VOLUME = "tts_volume"
         const val KEY_DEBUG_LOGGING = "debug_logging"
+        const val KEY_TTS_PROVIDER = "tts_provider"
+        const val KEY_INWORLD_API_KEY = "inworld_api_key"
+        const val KEY_INWORLD_VOICE_ID = "inworld_voice_id"
+        const val KEY_INWORLD_MODEL = "inworld_model"
+        const val KEY_INWORLD_ENDPOINT = "inworld_endpoint"
     }
 }
