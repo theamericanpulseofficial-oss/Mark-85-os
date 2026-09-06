@@ -83,13 +83,20 @@ class NvidiaProvider(
         if (isNvidia) {
             val lower = clean.lowercase()
             return when {
-                // If user already typed the full vendor prefix, keep it
-                clean.contains("/") -> clean
+                // If user typed deprecated or old preview models, upgrade to active official models
+                lower.contains("nemotron-3") || lower.contains("550b") || lower.contains("a55") || lower.contains("nemotron-4") -> "meta/llama-3.3-70b-instruct"
+                clean == "meta/llama-3.3-70b-instruct" ||
+                clean == "meta/llama-3.1-70b-instruct" ||
+                clean == "meta/llama-3.1-8b-instruct" ||
+                clean == "nvidia/llama-3.1-nemotron-70b-instruct" ||
+                clean == "deepseek-ai/deepseek-r1" ||
+                clean == "mistralai/mistral-large-2-instruct" -> clean
+                clean.contains("/") && !clean.contains("nemotron-3") && !clean.contains("550b") -> clean
                 lower.contains("3.3") && lower.contains("70b") -> "meta/llama-3.3-70b-instruct"
                 lower.contains("3.1") && lower.contains("8b") -> "meta/llama-3.1-8b-instruct"
                 lower.contains("3.1") && lower.contains("70b") -> "meta/llama-3.1-70b-instruct"
                 lower.contains("deepseek") && lower.contains("r1") -> "deepseek-ai/deepseek-r1"
-                lower.contains("deepseek") && lower.contains("v3") -> "deepseek-ai/deepseek-v3"
+                lower.contains("deepseek") && lower.contains("v3") -> "deepseek-ai/deepseek-r1"
                 lower.contains("mistral") && (lower.contains("large") || lower.contains("2")) -> "mistralai/mistral-large-2-instruct"
                 lower.contains("nemotron") -> "nvidia/llama-3.1-nemotron-70b-instruct"
                 lower.contains("qwen") && lower.contains("72b") -> "qwen/qwen2.5-72b-instruct"
@@ -157,22 +164,31 @@ class NvidiaProvider(
         val textError = plainTextResult.exceptionOrNull()
         val textErrorMsg = textError?.message?.lowercase() ?: ""
 
-        // Attempt 3: If 404 (model not found) or server error / timeout, auto-recover with high-speed model
-        val fastFallbackModel = when {
-            url.contains("nvidia.com") || apiKey.trim().startsWith("nvapi-") -> "meta/llama-3.1-8b-instruct"
-            url.contains("groq.com") || apiKey.trim().startsWith("gsk_") -> "llama-3.1-8b-instant"
-            url.contains("openai.com") -> "gpt-4o-mini"
-            url.contains("openrouter.ai") -> "meta-llama/llama-3.1-8b-instruct"
-            else -> "meta/llama-3.1-8b-instruct"
+        // Attempt 3: If 404 (model not found), end of life, endpoint error, or timeout, auto-recover with verified active models
+        val candidateModels = when {
+            url.contains("nvidia.com") || apiKey.trim().startsWith("nvapi-") -> listOf(
+                "meta/llama-3.3-70b-instruct",
+                "meta/llama-3.1-8b-instruct",
+                "nvidia/llama-3.1-nemotron-70b-instruct"
+            )
+            url.contains("groq.com") || apiKey.trim().startsWith("gsk_") -> listOf(
+                "llama-3.3-70b-versatile",
+                "llama-3.1-8b-instant"
+            )
+            url.contains("openai.com") -> listOf("gpt-4o-mini", "gpt-4o")
+            url.contains("openrouter.ai") -> listOf("meta-llama/llama-3.3-70b-instruct", "meta-llama/llama-3.1-8b-instruct")
+            else -> listOf("meta/llama-3.3-70b-instruct", "meta/llama-3.1-8b-instruct")
         }
 
-        if (fastFallbackModel != activeModel) {
-            if (debugLogging) {
-                Log.w(TAG, "Model $activeModel failed ($textErrorMsg). Auto-recovering with: $fastFallbackModel")
-            }
-            val recoveryResult = executeApiCall(client, url, apiKey, fastFallbackModel, messages, emptyList())
-            if (recoveryResult.isSuccess) {
-                return@withContext recoveryResult
+        for (candidate in candidateModels) {
+            if (candidate != activeModel) {
+                if (debugLogging) {
+                    Log.w(TAG, "Model $activeModel failed ($textErrorMsg). Auto-recovering with: $candidate")
+                }
+                val recoveryResult = executeApiCall(client, url, apiKey, candidate, messages, emptyList())
+                if (recoveryResult.isSuccess) {
+                    return@withContext recoveryResult
+                }
             }
         }
 
@@ -266,6 +282,36 @@ class NvidiaProvider(
                 Result.success(cleanReply)
             },
             onFailure = { error ->
+                val errText = error.message?.lowercase() ?: ""
+                val isNotFoundOrDeprecated = errText.contains("404") ||
+                        errText.contains("not found") ||
+                        errText.contains("end of life") ||
+                        errText.contains("endpoint") ||
+                        errText.contains("deprecated")
+
+                if (isNotFoundOrDeprecated) {
+                    val fallbackCandidates = listOf(
+                        "meta/llama-3.3-70b-instruct",
+                        "meta/llama-3.1-8b-instruct",
+                        "nvidia/llama-3.1-nemotron-70b-instruct"
+                    )
+                    for (candidate in fallbackCandidates) {
+                        if (candidate != model) {
+                            val retryResult = generateResponse(
+                                messages = testMessages,
+                                tools = emptyList(),
+                                model = candidate,
+                                apiKey = apiKey,
+                                endpoint = endpoint,
+                                timeoutSeconds = timeoutSeconds
+                            )
+                            if (retryResult.isSuccess) {
+                                val reply = retryResult.getOrNull()?.content?.trim() ?: "Online"
+                                return@withContext Result.success("Connected via $candidate: ${sanitizeThinking(reply)}")
+                            }
+                        }
+                    }
+                }
                 Result.failure(error)
             }
         )

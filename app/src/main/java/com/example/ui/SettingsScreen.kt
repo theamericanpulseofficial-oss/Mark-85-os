@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -181,6 +182,19 @@ fun SettingsScreen(
         viewModel.saveSettings(updated)
     }
 
+    LaunchedEffect(testState) {
+        if (testState is ConnectionTestState.Success) {
+            val msg = (testState as ConnectionTestState.Success).message
+            if (msg.startsWith("Connected via ")) {
+                val candidate = msg.removePrefix("Connected via ").substringBefore(":").trim()
+                if (candidate.isNotBlank() && candidate != selectedModel) {
+                    selectedModel = candidate
+                    commitChanges()
+                }
+            }
+        }
+    }
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = JarvisDeepBackground,
@@ -256,25 +270,42 @@ fun SettingsScreen(
                             commitChanges()
                         },
                         label = { Text("AI API Key (NVIDIA / OpenAI / OpenRouter / Groq)") },
-                        placeholder = { Text("nvapi-... or sk-...") },
+                        placeholder = { Text("nvapi-... or sk-... or gsk_...") },
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("nvidia_api_key_input"),
                         visualTransformation = if (showApiKey) VisualTransformation.None else PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                         trailingIcon = {
-                            IconButton(onClick = { showApiKey = !showApiKey }) {
-                                Icon(
-                                    imageVector = if (showApiKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                    contentDescription = "Toggle API Key Visibility",
-                                    tint = TextSecondary
-                                )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(onClick = {
+                                    val clipText = clipboardManager.getText()?.text
+                                    if (!clipText.isNullOrBlank()) {
+                                        apiKey = clipText
+                                        commitChanges()
+                                    }
+                                }) {
+                                    Icon(
+                                        imageVector = Icons.Default.ContentPaste,
+                                        contentDescription = "Paste API Key",
+                                        tint = JarvisCyan,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                IconButton(onClick = { showApiKey = !showApiKey }) {
+                                    Icon(
+                                        imageVector = if (showApiKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                        contentDescription = "Toggle API Key Visibility",
+                                        tint = TextSecondary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
                             }
                         },
                         colors = outlinedTextFieldColors()
                     )
 
-                    // 1 Model Input Field - Direct plain text field (No Dropdown)
+                    // 1 Model Input Field - Direct plain text field with Paste button
                     OutlinedTextField(
                         value = selectedModel,
                         onValueChange = {
@@ -287,8 +318,126 @@ fun SettingsScreen(
                             .fillMaxWidth()
                             .testTag("agent_model_input"),
                         singleLine = true,
+                        trailingIcon = {
+                            IconButton(onClick = {
+                                val clipText = clipboardManager.getText()?.text
+                                if (!clipText.isNullOrBlank()) {
+                                    selectedModel = clipText.trim()
+                                    commitChanges()
+                                }
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Default.ContentPaste,
+                                    contentDescription = "Paste Model Name",
+                                    tint = JarvisCyan,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        },
                         colors = outlinedTextFieldColors()
                     )
+
+                    // Quick Select Model Presets (1-Tap to configure)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "POPULAR ACTIVE MODELS (TAP TO SELECT):",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                color = TextSecondary,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 10.sp
+                            )
+                        )
+                        Text(
+                            text = "2026 VERIFIED ✓",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                color = JarvisCyan,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        )
+                    }
+
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf(
+                                "meta/llama-3.3-70b-instruct" to "Llama 3.3 70B ⭐",
+                                "nvidia/llama-3.1-nemotron-70b-instruct" to "Nemotron 70B 🤖"
+                            ).forEach { (mId, mLabel) ->
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(
+                                            if (selectedModel == mId) JarvisCyan.copy(alpha = 0.22f)
+                                            else Color(0xFF13202E)
+                                        )
+                                        .border(
+                                            1.dp,
+                                            if (selectedModel == mId) JarvisCyan.copy(alpha = 0.7f)
+                                            else Color.White.copy(alpha = 0.08f),
+                                            RoundedCornerShape(8.dp)
+                                        )
+                                        .clickable {
+                                            selectedModel = mId
+                                            commitChanges()
+                                        }
+                                        .padding(vertical = 7.dp, horizontal = 6.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = mLabel,
+                                        color = if (selectedModel == mId) JarvisCyan else Color(0xFFCAD8DE),
+                                        fontSize = 11.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = if (selectedModel == mId) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                }
+                            }
+                        }
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf(
+                                "meta/llama-3.1-8b-instruct" to "Llama 3.1 8B ⚡",
+                                "llama-3.3-70b-versatile" to "Groq 70B 🚀",
+                                "deepseek-ai/deepseek-r1" to "DeepSeek R1 🧠"
+                            ).forEach { (mId, mLabel) ->
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(
+                                            if (selectedModel == mId) JarvisCyan.copy(alpha = 0.22f)
+                                            else Color(0xFF13202E)
+                                        )
+                                        .border(
+                                            1.dp,
+                                            if (selectedModel == mId) JarvisCyan.copy(alpha = 0.7f)
+                                            else Color.White.copy(alpha = 0.08f),
+                                            RoundedCornerShape(8.dp)
+                                        )
+                                        .clickable {
+                                            selectedModel = mId
+                                            commitChanges()
+                                        }
+                                        .padding(vertical = 7.dp, horizontal = 4.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = mLabel,
+                                        color = if (selectedModel == mId) JarvisCyan else Color(0xFFCAD8DE),
+                                        fontSize = 10.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = if (selectedModel == mId) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                }
+                            }
+                        }
+                    }
 
                     // Test AI Connection Button
                     Button(

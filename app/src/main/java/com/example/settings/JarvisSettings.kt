@@ -80,30 +80,38 @@ Keep your verbal spoken answers brief, natural, elegant, confident, and actionab
 
         val PRESET_AGENT_MODELS = listOf(
             "meta/llama-3.3-70b-instruct",
-            "meta/llama-3.1-70b-instruct",
-            "meta/llama-3.1-8b-instruct",
-            "deepseek-ai/deepseek-r1",
-            "deepseek-ai/deepseek-v3",
-            "mistralai/mistral-large-2-instruct",
-            "mistralai/mixtral-8x22b-instruct",
             "nvidia/llama-3.1-nemotron-70b-instruct",
-            "nvidia/nemotron-4-340b-instruct",
-            "google/gemma-2-27b-it",
+            "meta/llama-3.1-8b-instruct",
+            "meta/llama-3.1-70b-instruct",
+            "deepseek-ai/deepseek-r1",
+            "mistralai/mistral-large-2-instruct",
             "qwen/qwen2.5-72b-instruct",
-            "microsoft/phi-3-medium-128k-instruct",
+            "google/gemma-2-27b-it",
+            "llama-3.3-70b-versatile",
+            "llama-3.1-8b-instant",
             "gpt-4o-mini",
-            "gpt-4o",
-            "llama-3.3-70b-versatile"
+            "gpt-4o"
         )
 
         val PRESET_VOICE_MODELS = PRESET_AGENT_MODELS
 
         fun load(context: Context): JarvisSettings {
             val prefs = SecurePreferencesHelper(context)
-            val model = prefs.getString(
+            val rawModel = prefs.getString(
                 SecurePreferencesHelper.KEY_NVIDIA_MODEL,
                 DEFAULT_NVIDIA_AGENT_MODEL
             )
+            // Auto-clean any deprecated or retired preview models
+            val model = if (rawModel.isBlank() ||
+                rawModel.contains("550b", ignoreCase = true) ||
+                rawModel.contains("nemotron-3", ignoreCase = true) ||
+                rawModel.contains("nemotron-4", ignoreCase = true) ||
+                rawModel.contains("a55", ignoreCase = true)
+            ) {
+                DEFAULT_NVIDIA_AGENT_MODEL
+            } else {
+                rawModel.trim()
+            }
             return JarvisSettings(
                 nvidiaApiKey = prefs.getString(SecurePreferencesHelper.KEY_NVIDIA_API_KEY, ""),
                 nvidiaModel = model,
