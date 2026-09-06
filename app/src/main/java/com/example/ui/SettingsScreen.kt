@@ -182,19 +182,7 @@ fun SettingsScreen(
         viewModel.saveSettings(updated)
     }
 
-    LaunchedEffect(testState) {
-        if (testState is ConnectionTestState.Success) {
-            val msg = (testState as ConnectionTestState.Success).message
-            if (msg.startsWith("Connected via ")) {
-                val candidate = msg.removePrefix("Connected via ").substringBefore(":").trim()
-                if (candidate.isNotBlank() && candidate != selectedModel) {
-                    selectedModel = candidate
-                    commitChanges()
-                }
-            }
-        }
-    }
-
+    // Keep selectedModel exactly as user set it, without auto-overriding from test connection
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = JarvisDeepBackground,
@@ -313,7 +301,7 @@ fun SettingsScreen(
                             commitChanges()
                         },
                         label = { Text("AI Model Name") },
-                        placeholder = { Text("e.g. meta/llama-3.3-70b-instruct") },
+                        placeholder = { Text("e.g. nvidia/nemotron-3-ultra-550b-a55b") },
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("agent_model_input"),
@@ -365,8 +353,8 @@ fun SettingsScreen(
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             listOf(
-                                "meta/llama-3.3-70b-instruct" to "Llama 3.3 70B ⭐",
-                                "nvidia/llama-3.1-nemotron-70b-instruct" to "Nemotron 70B 🤖"
+                                "nvidia/nemotron-3-ultra-550b-a55b" to "Nemotron 550B 👑",
+                                "nvidia/nemotron-3-super-120b-a12b" to "Nemotron 120B ⚡"
                             ).forEach { (mId, mLabel) ->
                                 Box(
                                     modifier = Modifier
@@ -402,9 +390,9 @@ fun SettingsScreen(
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             listOf(
-                                "meta/llama-3.1-8b-instruct" to "Llama 3.1 8B ⚡",
-                                "llama-3.3-70b-versatile" to "Groq 70B 🚀",
-                                "deepseek-ai/deepseek-r1" to "DeepSeek R1 🧠"
+                                "mistralai/mistral-nemotron" to "Mistral-Nemotron 🤖",
+                                "meta/llama-3.2-11b-vision-instruct" to "Llama 3.2 👁️",
+                                "openai/gpt-oss-20b" to "GPT-OSS 🚀"
                             ).forEach { (mId, mLabel) ->
                                 Box(
                                     modifier = Modifier

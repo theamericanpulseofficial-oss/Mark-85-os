@@ -63,7 +63,7 @@ data class JarvisSettings(
             "kokoro"
         )
 
-        const val DEFAULT_NVIDIA_AGENT_MODEL = "meta/llama-3.3-70b-instruct"
+        const val DEFAULT_NVIDIA_AGENT_MODEL = "nvidia/nemotron-3-super-120b-a12b"
         const val DEFAULT_NVIDIA_ENDPOINT = "https://integrate.api.nvidia.com/v1/chat/completions"
         const val DEFAULT_TIMEOUT_SECONDS = 60
         const val DEFAULT_TEMPERATURE = 0.3f
@@ -79,18 +79,14 @@ Address the user respectfully as "sir" when appropriate.
 Keep your verbal spoken answers brief, natural, elegant, confident, and actionable."""
 
         val PRESET_AGENT_MODELS = listOf(
-            "meta/llama-3.3-70b-instruct",
-            "nvidia/llama-3.1-nemotron-70b-instruct",
-            "meta/llama-3.1-8b-instruct",
-            "meta/llama-3.1-70b-instruct",
-            "deepseek-ai/deepseek-r1",
-            "mistralai/mistral-large-2-instruct",
-            "qwen/qwen2.5-72b-instruct",
-            "google/gemma-2-27b-it",
+            "nvidia/nemotron-3-super-120b-a12b",
+            "nvidia/nemotron-3-ultra-550b-a55b",
+            "mistralai/mistral-nemotron",
+            "meta/llama-3.2-11b-vision-instruct",
+            "meta/llama-3.2-90b-vision-instruct",
+            "openai/gpt-oss-20b",
             "llama-3.3-70b-versatile",
-            "llama-3.1-8b-instant",
-            "gpt-4o-mini",
-            "gpt-4o"
+            "llama-3.1-8b-instant"
         )
 
         val PRESET_VOICE_MODELS = PRESET_AGENT_MODELS
@@ -101,12 +97,12 @@ Keep your verbal spoken answers brief, natural, elegant, confident, and actionab
                 SecurePreferencesHelper.KEY_NVIDIA_MODEL,
                 DEFAULT_NVIDIA_AGENT_MODEL
             )
-            // Auto-clean any deprecated or retired preview models
+            // Replace gone/deprecated llama-3.3-70b-instruct or empty models with active Nemotron-3
             val model = if (rawModel.isBlank() ||
-                rawModel.contains("550b", ignoreCase = true) ||
-                rawModel.contains("nemotron-3", ignoreCase = true) ||
-                rawModel.contains("nemotron-4", ignoreCase = true) ||
-                rawModel.contains("a55", ignoreCase = true)
+                rawModel.contains("llama-3.3-70b-instruct", ignoreCase = true) ||
+                rawModel.contains("llama-3.1-70b-instruct", ignoreCase = true) ||
+                rawModel.contains("llama-3.1-nemotron-70b-instruct", ignoreCase = true) ||
+                rawModel.contains("nemotron-4-340b", ignoreCase = true)
             ) {
                 DEFAULT_NVIDIA_AGENT_MODEL
             } else {

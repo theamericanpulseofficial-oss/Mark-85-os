@@ -83,26 +83,17 @@ class NvidiaProvider(
         if (isNvidia) {
             val lower = clean.lowercase()
             return when {
-                // If user typed deprecated or old preview models, upgrade to active official models
-                lower.contains("nemotron-3") || lower.contains("550b") || lower.contains("a55") || lower.contains("nemotron-4") -> "meta/llama-3.3-70b-instruct"
-                clean == "meta/llama-3.3-70b-instruct" ||
-                clean == "meta/llama-3.1-70b-instruct" ||
-                clean == "meta/llama-3.1-8b-instruct" ||
-                clean == "nvidia/llama-3.1-nemotron-70b-instruct" ||
-                clean == "deepseek-ai/deepseek-r1" ||
-                clean == "mistralai/mistral-large-2-instruct" -> clean
-                clean.contains("/") && !clean.contains("nemotron-3") && !clean.contains("550b") -> clean
-                lower.contains("3.3") && lower.contains("70b") -> "meta/llama-3.3-70b-instruct"
-                lower.contains("3.1") && lower.contains("8b") -> "meta/llama-3.1-8b-instruct"
-                lower.contains("3.1") && lower.contains("70b") -> "meta/llama-3.1-70b-instruct"
-                lower.contains("deepseek") && lower.contains("r1") -> "deepseek-ai/deepseek-r1"
-                lower.contains("deepseek") && lower.contains("v3") -> "deepseek-ai/deepseek-r1"
-                lower.contains("mistral") && (lower.contains("large") || lower.contains("2")) -> "mistralai/mistral-large-2-instruct"
-                lower.contains("nemotron") -> "nvidia/llama-3.1-nemotron-70b-instruct"
-                lower.contains("qwen") && lower.contains("72b") -> "qwen/qwen2.5-72b-instruct"
-                lower.contains("gemma") -> "google/gemma-2-27b-it"
-                lower.contains("llama") -> "meta/llama-3.3-70b-instruct"
-                else -> "meta/$clean"
+                // If user entered a full model identifier with prefix, keep it directly (e.g. nvidia/nemotron-3-ultra-550b-a55b)
+                clean.contains("/") -> clean
+                lower.contains("550b") || lower.contains("ultra") -> "nvidia/nemotron-3-ultra-550b-a55b"
+                lower.contains("120b") || lower.contains("super") -> "nvidia/nemotron-3-super-120b-a12b"
+                lower.contains("mistral") && lower.contains("nemotron") -> "mistralai/mistral-nemotron"
+                lower.contains("nemotron") -> "nvidia/nemotron-3-super-120b-a12b"
+                lower.contains("deepseek") -> "deepseek-ai/deepseek-v4-flash-0731"
+                lower.contains("gpt") -> "openai/gpt-oss-20b"
+                lower.contains("llama") && lower.contains("90b") -> "meta/llama-3.2-90b-vision-instruct"
+                lower.contains("llama") -> "meta/llama-3.2-11b-vision-instruct"
+                else -> clean
             }
         } else if (isGroq) {
             val lower = clean.lowercase()
@@ -167,9 +158,10 @@ class NvidiaProvider(
         // Attempt 3: If 404 (model not found), end of life, endpoint error, or timeout, auto-recover with verified active models
         val candidateModels = when {
             url.contains("nvidia.com") || apiKey.trim().startsWith("nvapi-") -> listOf(
-                "meta/llama-3.3-70b-instruct",
-                "meta/llama-3.1-8b-instruct",
-                "nvidia/llama-3.1-nemotron-70b-instruct"
+                "nvidia/nemotron-3-super-120b-a12b",
+                "mistralai/mistral-nemotron",
+                "meta/llama-3.2-11b-vision-instruct",
+                "openai/gpt-oss-20b"
             )
             url.contains("groq.com") || apiKey.trim().startsWith("gsk_") -> listOf(
                 "llama-3.3-70b-versatile",
@@ -177,7 +169,7 @@ class NvidiaProvider(
             )
             url.contains("openai.com") -> listOf("gpt-4o-mini", "gpt-4o")
             url.contains("openrouter.ai") -> listOf("meta-llama/llama-3.3-70b-instruct", "meta-llama/llama-3.1-8b-instruct")
-            else -> listOf("meta/llama-3.3-70b-instruct", "meta/llama-3.1-8b-instruct")
+            else -> listOf("nvidia/nemotron-3-super-120b-a12b", "mistralai/mistral-nemotron")
         }
 
         for (candidate in candidateModels) {
@@ -291,9 +283,10 @@ class NvidiaProvider(
 
                 if (isNotFoundOrDeprecated) {
                     val fallbackCandidates = listOf(
-                        "meta/llama-3.3-70b-instruct",
-                        "meta/llama-3.1-8b-instruct",
-                        "nvidia/llama-3.1-nemotron-70b-instruct"
+                        "nvidia/nemotron-3-super-120b-a12b",
+                        "mistralai/mistral-nemotron",
+                        "meta/llama-3.2-11b-vision-instruct",
+                        "openai/gpt-oss-20b"
                     )
                     for (candidate in fallbackCandidates) {
                         if (candidate != model) {
