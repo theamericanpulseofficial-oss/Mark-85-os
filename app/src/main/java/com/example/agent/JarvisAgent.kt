@@ -298,6 +298,8 @@ You have access to Android tools to control the user's device:
 - open_settings: Open Wi-Fi, Bluetooth, Display, Battery, Sound, Apps, or General settings
 - search_contact: Search contacts address book by name
 - web_search: Search web or YouTube
+- send_message: Send or compose a WhatsApp message or SMS (e.g. "send message to John saying I will be late", "send WhatsApp message")
+- scroll_screen: Scroll the current open screen up/down/left/right or navigate back/home in WhatsApp, YouTube, Instagram, browser (e.g. "scroll down", "scroll up", "scroll", "go back")
 
 Guidelines:
 1. When asked to perform an action on the phone, invoke the corresponding tool.

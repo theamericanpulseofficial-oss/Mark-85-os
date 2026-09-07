@@ -25,6 +25,8 @@ class ToolRegistry(private val context: Context) {
         register(SettingsTool())
         register(ContactsTool())
         register(WebActionTool())
+        register(SendMessageTool())
+        register(ScreenScrollTool())
     }
 
     fun register(tool: PhoneTool) {

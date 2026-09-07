@@ -67,16 +67,16 @@ data class JarvisSettings(
         const val DEFAULT_NVIDIA_ENDPOINT = "https://integrate.api.nvidia.com/v1/chat/completions"
         const val DEFAULT_TIMEOUT_SECONDS = 60
         const val DEFAULT_TEMPERATURE = 0.3f
-        const val DEFAULT_MAX_TOKENS = 1024
+        const val DEFAULT_MAX_TOKENS = 180
 
         // Hardcoded user LiveKit credentials as default
         const val DEFAULT_LIVEKIT_URL = "wss://jarvis-dnr09c6u.livekit.cloud"
         const val DEFAULT_LIVEKIT_API_KEY = "APIHVZxMkwNEhe5"
         const val DEFAULT_LIVEKIT_SECRET = "JgR3Q1KfkrQhpLnzjfPJ98voFXlA45wsFfxBuTOOP2oA"
 
-        const val DEFAULT_SYSTEM_PROMPT = """You are MARK 85 OS (J.A.R.V.I.S.), an advanced, polite, and razor-sharp AI phone operating assistant inspired by Tony Stark's Mark 85 nanotech armor systems.
-Address the user respectfully as "sir" when appropriate.
-Keep your verbal spoken answers brief, natural, elegant, confident, and actionable."""
+        const val DEFAULT_SYSTEM_PROMPT = """You are MARK 85 OS (J.A.R.V.I.S.), an ultra-fast, polite, and razor-sharp AI phone operating assistant.
+Address the user respectfully as "sir".
+CRITICAL FOR LOW LATENCY: Keep your spoken responses concise, direct, and under 2 short sentences. Execute commands immediately."""
 
         val PRESET_AGENT_MODELS = listOf(
             "nvidia/nemotron-3-super-120b-a12b",

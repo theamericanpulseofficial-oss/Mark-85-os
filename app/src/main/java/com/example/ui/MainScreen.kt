@@ -3,6 +3,7 @@ package com.example.ui
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -206,7 +207,9 @@ fun MainScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     IronManMark85Centerpiece(
-                        isRunning = isRunning
+                        isRunning = isRunning,
+                        agentState = agentState,
+                        stateColor = stateColor
                     )
                 }
 
@@ -505,6 +508,18 @@ fun IronManMark85Centerpiece(
         label = "MaskCoverAlpha"
     )
 
+    // Gentle pulse animation when active (strictly inside the eyes and reactor)
+    val infiniteTransition = rememberInfiniteTransition(label = "EyesReactorPulse")
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.05f,
+        targetValue = if (isRunning && agentState != AgentState.OFFLINE) 0.35f else 0.05f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "PulseAlpha"
+    )
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -536,46 +551,48 @@ fun IronManMark85Centerpiece(
                     contentScale = ContentScale.FillBounds
                 )
 
-                // 2. Exact Black Cover Mask: when stopped, covers ONLY the white eyes and Arc Reactor up to their outlines
-                // When started, fades smoothly to 0, revealing the original artwork
-                if (coverAlpha > 0.005f) {
-                    Canvas(modifier = Modifier.fillMaxSize()) {
-                        val w = size.width
-                        val h = size.height
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val w = size.width
+                    val h = size.height
 
+                    // 1. Left Eye - Exact polygon strictly covering the eye slit (108..128 X, 217..225 Y out of 288x512)
+                    val leftEyePath = Path().apply {
+                        moveTo(w * 0.375f, h * 0.426f)
+                        lineTo(w * 0.444f, h * 0.434f)
+                        lineTo(w * 0.444f, h * 0.440f)
+                        lineTo(w * 0.410f, h * 0.440f)
+                        lineTo(w * 0.375f, h * 0.430f)
+                        close()
+                    }
+
+                    // 2. Right Eye - Exact polygon strictly covering the eye slit (158..178 X, 217..225 Y out of 288x512)
+                    val rightEyePath = Path().apply {
+                        moveTo(w * 0.625f, h * 0.426f)
+                        lineTo(w * 0.556f, h * 0.434f)
+                        lineTo(w * 0.556f, h * 0.440f)
+                        lineTo(w * 0.590f, h * 0.440f)
+                        lineTo(w * 0.625f, h * 0.430f)
+                        close()
+                    }
+
+                    // 3. Arc Reactor - Center at (0.498, 0.762), radius inside reactor boundary
+                    val reactorCenter = Offset(w * 0.498f, h * 0.762f)
+                    val reactorRadius = w * 0.063f
+
+                    // When running, apply subtle tactical state glow strictly confined within eye/reactor bounds
+                    if (isRunning && pulseAlpha > 0.05f) {
+                        val glowColor = stateColor.copy(alpha = pulseAlpha)
+                        drawPath(leftEyePath, color = glowColor)
+                        drawPath(rightEyePath, color = glowColor)
+                        drawCircle(color = glowColor, radius = reactorRadius, center = reactorCenter)
+                    }
+
+                    // Exact Black Cover Mask: when disengaged/stopped, covers ONLY the white glowing eyes and Arc Reactor without any spillover
+                    if (coverAlpha > 0.005f) {
                         val maskColor = Color.Black.copy(alpha = coverAlpha)
-
-                        // 1. Left Eye - Slanted contour polygon covering 100% of the eye slit up to the armor outline
-                        val leftEyeCenter = Offset(w * 0.440f, h * 0.432f)
-                        withTransform({
-                            rotate(degrees = 13f, pivot = leftEyeCenter)
-                        }) {
-                            drawOval(
-                                color = maskColor,
-                                topLeft = Offset(leftEyeCenter.x - w * 0.058f, leftEyeCenter.y - h * 0.018f),
-                                size = Size(w * 0.116f, h * 0.036f)
-                            )
-                        }
-
-                        // 2. Right Eye - Slanted contour polygon covering 100% of the eye slit up to the armor outline
-                        val rightEyeCenter = Offset(w * 0.560f, h * 0.432f)
-                        withTransform({
-                            rotate(degrees = -13f, pivot = rightEyeCenter)
-                        }) {
-                            drawOval(
-                                color = maskColor,
-                                topLeft = Offset(rightEyeCenter.x - w * 0.058f, rightEyeCenter.y - h * 0.018f),
-                                size = Size(w * 0.116f, h * 0.036f)
-                            )
-                        }
-
-                        // 3. Arc Reactor - Fully covered evenly right up to the circular housing outline
-                        val reactorCenter = Offset(w * 0.500f, h * 0.755f)
-                        drawCircle(
-                            color = maskColor,
-                            radius = w * 0.096f,
-                            center = reactorCenter
-                        )
+                        drawPath(leftEyePath, color = maskColor)
+                        drawPath(rightEyePath, color = maskColor)
+                        drawCircle(color = maskColor, radius = reactorRadius, center = reactorCenter)
                     }
                 }
             }

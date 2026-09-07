@@ -505,12 +505,15 @@ fun SettingsScreen(
                 }
             }
 
-            // 2. LIVEKIT STREAMING STATUS (HARDCODED & READY)
-            SettingsSectionHeader(title = "LIVEKIT CLOUD STREAMING", icon = Icons.Default.CloudDone)
+            // 2. LIVEKIT STREAMING ARCHITECTURE INFO
+            SettingsSectionHeader(title = "AUDIO PIPELINE ARCHITECTURE", icon = Icons.Default.CloudDone)
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = JarvisSurfaceDark),
-                shape = RoundedCornerShape(16.dp)
+                shape = RoundedCornerShape(16.dp),
+                border = CardDefaults.outlinedCardBorder().copy(
+                    brush = androidx.compose.ui.graphics.SolidColor(Color.White.copy(alpha = 0.08f))
+                )
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(
@@ -520,16 +523,17 @@ fun SettingsScreen(
                     ) {
                         Column {
                             Text(
-                                text = "LiveKit Real-Time WebRTC",
+                                text = "Zero-Latency Direct Pipeline",
                                 color = TextPrimary,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 13.sp
                             )
                             Text(
-                                text = "High-speed voice audio pipeline",
-                                color = TextSecondary,
-                                fontSize = 11.sp
+                                text = "Direct Phone Audio -> Neural AI Core",
+                                color = JarvisCyan,
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace
                             )
                         }
                         Box(
@@ -539,15 +543,16 @@ fun SettingsScreen(
                                 .border(1.dp, JarvisOnlineGreen.copy(alpha = 0.5f), RoundedCornerShape(6.dp))
                                 .padding(horizontal = 8.dp, vertical = 4.dp)
                         ) {
-                            Text("READY ✓", color = JarvisOnlineGreen, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                            Text("OPTIMIZED ⚡", color = JarvisOnlineGreen, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                         }
                     }
 
                     Text(
-                        text = "Server: wss://jarvis-dnr09c6u.livekit.cloud\nPre-configured for bidirectional real-time audio.",
+                        text = "• LiveKit Info: LiveKit WebRTC server stream karne ke liye use hota hai. Current setup me app direct phone mic aur native audio buffer se chalti hai taaki extra cloud network roundtrips na ho.\n• LiveKit WebRTC server link: wss://jarvis-dnr09c6u.livekit.cloud (Standby mode me configured hai, direct local audio pipeline latency ko sabse fast rakhti hai).",
                         color = Color(0xFF8FA3AD),
                         fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace
+                        fontFamily = FontFamily.Monospace,
+                        lineHeight = 16.sp
                     )
                 }
             }
@@ -1079,6 +1084,51 @@ fun SettingsScreen(
                         permission = Manifest.permission.READ_CONTACTS,
                         onRequest = { onRequestPermission(Manifest.permission.READ_CONTACTS) }
                     )
+
+                    // Accessibility Service for Hands-Free Scrolling & App Control
+                    val a11yActive = com.example.service.JarvisAccessibilityService.isServiceRunning()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Screen Scrolling & App Control (Accessibility)",
+                                color = TextPrimary,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                                fontSize = 13.sp
+                            )
+                            Text(
+                                text = "Required to scroll WhatsApp, YouTube, social feeds, and tap controls hands-free",
+                                color = TextSecondary,
+                                fontSize = 11.sp
+                            )
+                        }
+
+                        if (a11yActive) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = "Active",
+                                    tint = JarvisOnlineGreen,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Enabled ✓", color = JarvisOnlineGreen, fontSize = 12.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                            }
+                        } else {
+                            OutlinedButton(
+                                onClick = {
+                                    com.example.service.JarvisAccessibilityService.openAccessibilitySettings(context)
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = JarvisCyan)
+                            ) {
+                                Text("Enable", fontSize = 11.sp)
+                            }
+                        }
+                    }
                 }
             }
 
