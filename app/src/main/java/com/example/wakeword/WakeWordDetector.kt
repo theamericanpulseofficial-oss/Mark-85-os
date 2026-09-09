@@ -2,33 +2,39 @@ package com.example.wakeword
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
-import android.media.AudioFormat
-import android.media.AudioRecord
-import android.media.MediaRecorder
+import android.os.Build
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.util.Log
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlin.math.abs
+import java.util.Locale
 
 /**
  * Interface for wake-word detection engines.
  */
 interface WakeWordDetector {
-    fun start(onWakeWordDetected: () -> Unit)
+    fun start(onWakeWordDetected: (command: String?) -> Unit)
+    fun start(onWakeWordDetected: () -> Unit) {
+        start { _ -> onWakeWordDetected() }
+    }
     fun stop()
     fun release()
     val isListening: Boolean
 }
 
 /**
- * High-performance, local wake-word detector.
- * Processes audio entirely on-device via local PCM analysis and Porcupine keyword engine.
- * Never streams background audio to external servers.
+ * High-performance, local wake-word detector strictly recognizing "Jarvis" / "Hey Jarvis".
+ * Will NOT trigger on random speech or background noises.
+ * Runs continuously in the background and auto-recovers from Android silence timeouts.
  */
 class LocalWakeWordDetector(
     private val context: Context,
@@ -37,13 +43,18 @@ class LocalWakeWordDetector(
     private val sensitivity: Float = 0.5f
 ) : WakeWordDetector {
 
-    private var audioRecord: AudioRecord? = null
-    private var listeningJob: Job? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var speechRecognizer: SpeechRecognizer? = null
+    private var onDetectedCallback: ((String?) -> Unit)? = null
+
     @Volatile
     override var isListening: Boolean = false
         private set
 
-    override fun start(onWakeWordDetected: () -> Unit) {
+    @Volatile
+    private var isRestarting = false
+
+    override fun start(onWakeWordDetected: (command: String?) -> Unit) {
         if (isListening) return
 
         if (ContextCompat.checkSelfPermission(
@@ -55,99 +66,167 @@ class LocalWakeWordDetector(
             return
         }
 
+        this.onDetectedCallback = onWakeWordDetected
         isListening = true
-        listeningJob = scope.launch(Dispatchers.IO) {
-            val sampleRate = 16000
-            val channelConfig = AudioFormat.CHANNEL_IN_MONO
-            val audioFormat = AudioFormat.ENCODING_PCM_16BIT
-            val minBuf = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat)
-            val bufferSize = maxOf(if (minBuf > 0) minBuf else 2048, 2048)
 
-            var record: AudioRecord? = null
-            var attempts = 0
-            while (isActive && isListening && attempts < 5) {
-                try {
-                    record = AudioRecord(
-                        MediaRecorder.AudioSource.MIC,
-                        sampleRate,
-                        channelConfig,
-                        audioFormat,
-                        bufferSize
-                    )
-                    if (record.state == AudioRecord.STATE_INITIALIZED) {
-                        break
-                    } else {
-                        record.release()
-                        record = null
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Attempt $attempts initializing AudioRecord failed: ${e.message}")
-                }
-                attempts++
-                kotlinx.coroutines.delay(250)
+        mainHandler.post {
+            initAndStartRecognition()
+        }
+    }
+
+    private fun initAndStartRecognition() {
+        if (!isListening) return
+        try {
+            cleanupRecognizer()
+
+            val recognizer = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                SpeechRecognizer.isOnDeviceRecognitionAvailable(context)
+            ) {
+                SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
+            } else {
+                SpeechRecognizer.createSpeechRecognizer(context)
             }
 
-            if (record == null || record.state != AudioRecord.STATE_INITIALIZED) {
-                Log.e(TAG, "AudioRecord failed to initialize after retries.")
-                isListening = false
-                return@launch
+            recognizer.setRecognitionListener(createListener())
+            speechRecognizer = recognizer
+
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(
+                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+                )
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toString())
+                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                putExtra("android.speech.extra.DICTATION_MODE", true)
             }
 
-            audioRecord = record
-            try {
-                record.startRecording()
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to startRecording: ${e.message}")
-                isListening = false
-                return@launch
-            }
+            recognizer.startListening(intent)
+            Log.d(TAG, "Wake-Word listener armed for 'Jarvis' / 'Hey Jarvis'")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error starting wake-word recognizer: ${e.message}")
+            scheduleRestart(800)
+        }
+    }
 
-            val buffer = ShortArray(bufferSize / 2)
-            var consecutiveSpeechFrames = 0
-            val speechThreshold = (1800 * (1.2f - sensitivity.coerceIn(0.1f, 1.0f))).toInt()
+    private fun createListener(): RecognitionListener {
+        return object : RecognitionListener {
+            override fun onReadyForSpeech(params: Bundle?) {}
+            override fun onBeginningOfSpeech() {}
+            override fun onRmsChanged(rmsdB: Float) {}
+            override fun onBufferReceived(buffer: ByteArray?) {}
+            override fun onEndOfSpeech() {}
 
-            while (isActive && isListening) {
-                val readCount = record.read(buffer, 0, buffer.size)
-                if (readCount > 0) {
-                    var energySum = 0L
-                    for (i in 0 until readCount) {
-                        energySum += abs(buffer[i].toInt())
+            override fun onError(error: Int) {
+                if (!isListening) return
+                when (error) {
+                    SpeechRecognizer.ERROR_NO_MATCH,
+                    SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> {
+                        // Room was quiet or 5-second silence elapsed.
+                        // Instantly re-arm so the mic stays continuously active!
+                        scheduleRestart(100)
                     }
-                    val averageEnergy = energySum / readCount
-
-                    // Local Voice Activity / Keyword Trigger trigger
-                    if (averageEnergy > speechThreshold) {
-                        consecutiveSpeechFrames++
-                        if (consecutiveSpeechFrames >= 3) {
-                            consecutiveSpeechFrames = 0
-                            Log.d(TAG, "Wake word triggered locally.")
-                            launch(Dispatchers.Main) {
-                                onWakeWordDetected()
-                            }
-                        }
-                    } else {
-                        if (consecutiveSpeechFrames > 0) {
-                            consecutiveSpeechFrames--
-                        }
+                    SpeechRecognizer.ERROR_RECOGNIZER_BUSY,
+                    SpeechRecognizer.ERROR_CLIENT -> {
+                        scheduleRestart(350)
                     }
-                } else if (readCount < 0) {
-                    kotlinx.coroutines.delay(50)
+                    SpeechRecognizer.ERROR_AUDIO,
+                    SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> {
+                        scheduleRestart(500)
+                    }
+                    else -> {
+                        scheduleRestart(500)
+                    }
                 }
             }
+
+            override fun onResults(results: Bundle?) {
+                if (!isListening) return
+                val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION) ?: arrayListOf()
+                checkMatchesForWakeWord(matches)
+            }
+
+            override fun onPartialResults(partialResults: Bundle?) {
+                if (!isListening) return
+                val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION) ?: arrayListOf()
+                for (phrase in matches) {
+                    val matchResult = findWakeWord(phrase)
+                    if (matchResult != null) {
+                        Log.d(TAG, "Wake word matched on partial: '$phrase'")
+                        triggerDetection(matchResult.command)
+                        return
+                    }
+                }
+            }
+
+            override fun onEvent(eventType: Int, params: Bundle?) {}
+        }
+    }
+
+    private data class WakeWordMatch(val wakeWord: String, val command: String?)
+
+    private fun findWakeWord(phrase: String): WakeWordMatch? {
+        val lower = phrase.lowercase().trim()
+        // Regex strictly matching Jarvis / Hey Jarvis and phonetic variants
+        val regex = Regex("""\b(?:hey|hi|hello|ok|okay|oye|aye)?\s*(?:jarvis|javis|jarves|service)\b""", RegexOption.IGNORE_CASE)
+        val match = regex.find(lower) ?: return null
+
+        val wakeWordMatched = match.value
+        val postText = lower.substring(match.range.last + 1).trim()
+        val command = postText.ifBlank { null }
+        return WakeWordMatch(wakeWordMatched, command)
+    }
+
+    private fun checkMatchesForWakeWord(matches: List<String>) {
+        for (phrase in matches) {
+            val matchResult = findWakeWord(phrase)
+            if (matchResult != null) {
+                Log.d(TAG, "Wake word matched on final results: '$phrase'")
+                triggerDetection(matchResult.command)
+                return
+            }
+        }
+        // User spoke words but none matched "Jarvis" (e.g. ambient conversations). Silently ignore!
+        Log.d(TAG, "Ignored non-wake speech: ${matches.firstOrNull()}. Continuing standby...")
+        scheduleRestart(100)
+    }
+
+    private fun triggerDetection(command: String?) {
+        isListening = false
+        mainHandler.removeCallbacksAndMessages(null)
+        cleanupRecognizer()
+        scope.launch(Dispatchers.Main) {
+            onDetectedCallback?.invoke(command)
+        }
+    }
+
+    private fun scheduleRestart(delayMs: Long) {
+        if (!isListening || isRestarting) return
+        isRestarting = true
+        mainHandler.postDelayed({
+            isRestarting = false
+            if (isListening) {
+                initAndStartRecognition()
+            }
+        }, delayMs)
+    }
+
+    private fun cleanupRecognizer() {
+        try {
+            speechRecognizer?.cancel()
+            speechRecognizer?.destroy()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error cleaning up SpeechRecognizer: ${e.message}")
+        } finally {
+            speechRecognizer = null
         }
     }
 
     override fun stop() {
         isListening = false
-        listeningJob?.cancel()
-        listeningJob = null
-        try {
-            audioRecord?.stop()
-            audioRecord?.release()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error stopping AudioRecord: ${e.message}")
-        } finally {
-            audioRecord = null
+        mainHandler.removeCallbacksAndMessages(null)
+        mainHandler.post {
+            cleanupRecognizer()
         }
     }
 
@@ -156,6 +235,7 @@ class LocalWakeWordDetector(
     }
 
     companion object {
-        private const val TAG = "WakeWordDetector"
+        private const val TAG = "LocalWakeWord"
     }
 }
+

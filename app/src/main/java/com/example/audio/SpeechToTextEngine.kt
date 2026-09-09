@@ -5,6 +5,8 @@ import android.content.Intent
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -30,6 +32,7 @@ interface SpeechToTextEngine {
  */
 class AndroidSpeechRecognizerEngine(private val context: Context) : SpeechToTextEngine {
 
+    private val mainHandler = Handler(Looper.getMainLooper())
     private var speechRecognizer: SpeechRecognizer? = null
     @Volatile
     override var isListening: Boolean = false
@@ -67,13 +70,15 @@ class AndroidSpeechRecognizerEngine(private val context: Context) : SpeechToText
     }
 
     private fun initRecognizer() {
-        if (SpeechRecognizer.isRecognitionAvailable(context)) {
-            try {
-                speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
-                    setRecognitionListener(createListener())
+        mainHandler.post {
+            if (SpeechRecognizer.isRecognitionAvailable(context)) {
+                try {
+                    speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
+                        setRecognitionListener(createListener())
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to create SpeechRecognizer: ${e.message}")
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to create SpeechRecognizer: ${e.message}")
             }
         }
     }
@@ -138,54 +143,62 @@ class AndroidSpeechRecognizerEngine(private val context: Context) : SpeechToText
             return
         }
 
-        if (speechRecognizer == null) {
-            initRecognizer()
-        }
-
         this.onResultCallback = onResult
         this.onErrorCallback = onError
 
-        try {
-            muteBeepSound(true)
-            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(
-                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-                )
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toString())
-                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
-                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
-                // Headless mode - suppresses Google Assistant dialogs
-                putExtra("android.speech.extra.DICTATION_MODE", true)
+        mainHandler.post {
+            try {
+                if (speechRecognizer == null) {
+                    speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
+                        setRecognitionListener(createListener())
+                    }
+                }
+                muteBeepSound(true)
+                val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                    putExtra(
+                        RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                        RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+                    )
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toString())
+                    putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+                    putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+                    // Headless mode - suppresses Google Assistant dialogs
+                    putExtra("android.speech.extra.DICTATION_MODE", true)
+                }
+                speechRecognizer?.startListening(intent)
+                isListening = true
+            } catch (e: Exception) {
+                isListening = false
+                muteBeepSound(false)
+                onError("Failed to start voice capture: ${e.message}")
             }
-            speechRecognizer?.startListening(intent)
-            isListening = true
-        } catch (e: Exception) {
-            isListening = false
-            muteBeepSound(false)
-            onError("Failed to start voice capture: ${e.message}")
         }
     }
 
     override fun stopListening() {
-        try {
-            speechRecognizer?.stopListening()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error stopping SpeechRecognizer: ${e.message}")
-        } finally {
-            isListening = false
-            muteBeepSound(false)
+        mainHandler.post {
+            try {
+                speechRecognizer?.stopListening()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error stopping SpeechRecognizer: ${e.message}")
+            } finally {
+                isListening = false
+                muteBeepSound(false)
+            }
         }
     }
 
     override fun destroy() {
-        stopListening()
-        try {
-            speechRecognizer?.destroy()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error destroying SpeechRecognizer: ${e.message}")
-        } finally {
-            speechRecognizer = null
+        mainHandler.post {
+            try {
+                speechRecognizer?.stopListening()
+                speechRecognizer?.destroy()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error destroying SpeechRecognizer: ${e.message}")
+            } finally {
+                isListening = false
+                speechRecognizer = null
+            }
         }
     }
 

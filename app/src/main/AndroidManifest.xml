@@ -57,6 +57,7 @@
             android:name=".service.JarvisForegroundService"
             android:enabled="true"
             android:exported="false"
+            android:stopWithTask="false"
             android:foregroundServiceType="microphone" />
 
         <!-- Accessibility Service for Hands-Free Screen Scrolling & UI Navigation -->

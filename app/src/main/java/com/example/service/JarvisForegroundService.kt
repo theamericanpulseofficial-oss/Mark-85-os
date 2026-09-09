@@ -108,12 +108,11 @@ class JarvisForegroundService : Service() {
     private fun startForegroundWithNotification() {
         val notification = buildNotification(AgentState.LISTENING_FOR_WAKE_WORD.label)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val foregroundServiceType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-            } else {
-                0
-            }
-            startForeground(NOTIFICATION_ID, notification, foregroundServiceType)
+            )
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
@@ -132,16 +131,22 @@ class JarvisForegroundService : Service() {
                 picovoiceAccessKey = settings.picovoiceAccessKey,
                 sensitivity = settings.wakeWordSensitivity
             ).apply {
-                start {
-                    onWakeWordTriggered()
+                start { directCommand ->
+                    onWakeWordTriggered(directCommand)
                 }
             }
         }
     }
 
-    private fun onWakeWordTriggered() {
-        Log.d(TAG, "Wake word 'Hey Jarvis' detected. Starting speech capture.")
+    private fun onWakeWordTriggered(directCommand: String? = null) {
+        Log.d(TAG, "Wake word 'Hey Jarvis' detected. Direct command: $directCommand")
         wakeWordDetector?.stop()
+
+        if (!directCommand.isNullOrBlank()) {
+            // User already spoke the command with the wake word (e.g. "Hey Jarvis torch on karo")
+            handleUserTranscript(directCommand)
+            return
+        }
 
         agent.setState(AgentState.LISTENING)
         _agentStateFlow.value = AgentState.LISTENING
@@ -155,7 +160,7 @@ class JarvisForegroundService : Service() {
             onError = { errorMsg ->
                 Log.w(TAG, "Speech capture ended or timed out: $errorMsg")
                 serviceScope.launch {
-                    kotlinx.coroutines.delay(250)
+                    kotlinx.coroutines.delay(200)
                     startStandbyWakeWord()
                 }
             }
@@ -227,8 +232,8 @@ class JarvisForegroundService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Mark 85 OS")
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("Mark 85 OS - J.A.R.V.I.S.")
             .setContentText("Status: $statusText")
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentIntent(openPendingIntent)
@@ -236,7 +241,20 @@ class JarvisForegroundService : Service() {
             .addAction(R.drawable.ic_launcher_foreground, "DISENGAGE", stopPendingIntent)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .build()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            builder.setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+        }
+        return builder.build()
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        Log.d(TAG, "onTaskRemoved: Activity swiped/closed. Maintaining active background assistant.")
+        if (_isRunning.value) {
+            startForegroundWithNotification()
+            startStandbyWakeWord()
+        }
     }
 
     private fun updateNotification(statusText: String) {
