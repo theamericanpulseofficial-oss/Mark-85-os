@@ -64,8 +64,18 @@ class JarvisAgent(
             return "I am listening, sir."
         }
 
+        val basePrompt = settings.systemPrompt.ifBlank { SYSTEM_PROMPT }
+        val effectivePrompt = if (settings.customInstructions.isNotBlank()) {
+            "$basePrompt\n\nUSER CUSTOM INSTRUCTIONS & PERSONA (OBEY STRICTLY):\n${settings.customInstructions}"
+        } else {
+            basePrompt
+        }
+
         if (conversationHistory.isEmpty()) {
-            conversationHistory.add(ChatMessage.system(settings.systemPrompt.ifBlank { SYSTEM_PROMPT }))
+            conversationHistory.add(ChatMessage.system(effectivePrompt))
+        } else {
+            // Keep system prompt updated with custom user instructions
+            conversationHistory[0] = ChatMessage.system(effectivePrompt)
         }
 
         // Handle active pending confirmation if user answers Yes/No
@@ -393,6 +403,117 @@ class JarvisAgent(
             )
         }
 
+        // 4. Flashlight / Torch Control (Instant Hardware Access)
+        if (lower == "torch on" || lower == "torch jalao" || lower == "torch chalao" ||
+            lower == "torch on karo" || lower == "flashlight on" || lower == "turn on flashlight" ||
+            lower == "turn on torch" || lower == "flash on" || lower == "light on" || lower == "light on karo"
+        ) {
+            return com.example.ai.ToolCall(
+                id = "call_fast_torch_on",
+                type = "function",
+                functionName = "control_flashlight",
+                argumentsJson = "{\"action\":\"on\"}"
+            )
+        }
+        if (lower == "torch off" || lower == "torch band karo" || lower == "torch bujhao" ||
+            lower == "torch off karo" || lower == "flashlight off" || lower == "turn off flashlight" ||
+            lower == "turn off torch" || lower == "flash off" || lower == "light off" || lower == "light band karo"
+        ) {
+            return com.example.ai.ToolCall(
+                id = "call_fast_torch_off",
+                type = "function",
+                functionName = "control_flashlight",
+                argumentsJson = "{\"action\":\"off\"}"
+            )
+        }
+
+        // 5. Battery & Volume Device Controls
+        if (lower == "battery" || lower == "battery kitni hai" || lower == "check battery" ||
+            lower == "battery percentage" || lower == "battery percent" || lower == "battery status" ||
+            lower == "charge kitna hai"
+        ) {
+            return com.example.ai.ToolCall(
+                id = "call_fast_battery",
+                type = "function",
+                functionName = "control_device",
+                argumentsJson = "{\"command\":\"battery_status\"}"
+            )
+        }
+        if (lower == "volume up" || lower == "volume badhao" || lower == "awaz badhao" || lower == "awaz badao") {
+            return com.example.ai.ToolCall(
+                id = "call_fast_volume_up",
+                type = "function",
+                functionName = "control_device",
+                argumentsJson = "{\"command\":\"volume_up\"}"
+            )
+        }
+        if (lower == "volume down" || lower == "volume kam karo" || lower == "awaz kam karo") {
+            return com.example.ai.ToolCall(
+                id = "call_fast_volume_down",
+                type = "function",
+                functionName = "control_device",
+                argumentsJson = "{\"command\":\"volume_down\"}"
+            )
+        }
+        if (lower == "mute" || lower == "silent karo" || lower == "awaz band karo") {
+            return com.example.ai.ToolCall(
+                id = "call_fast_mute",
+                type = "function",
+                functionName = "control_device",
+                argumentsJson = "{\"command\":\"mute\"}"
+            )
+        }
+
+        // 6. Direct Phone Call Fast-Path (Hindi + English)
+        val callRegex = Regex("""^(?:call karo|call|phone lagao|phone karo)\s+(?:to\s+)?(.+)$""")
+        val callMatch = callRegex.find(lower)
+        if (callMatch != null) {
+            val target = callMatch.groupValues[1].trim()
+            if (target.isNotBlank()) {
+                val isDigits = target.replace(Regex("[^0-9+]"), "").length >= 7 && !target.any { it.isLetter() }
+                val args = if (isDigits) {
+                    "{\"phoneNumber\":\"$target\"}"
+                } else {
+                    "{\"contactName\":\"$target\"}"
+                }
+                return com.example.ai.ToolCall(
+                    id = "call_fast_phone_call",
+                    type = "function",
+                    functionName = "phone_call",
+                    argumentsJson = args
+                )
+            }
+        }
+        val callKoRegex = Regex("""^(.+?)\s+ko\s+(?:call karo|call lagao|phone lagao|phone karo)$""")
+        val callKoMatch = callKoRegex.find(lower)
+        if (callKoMatch != null) {
+            val target = callKoMatch.groupValues[1].trim()
+            if (target.isNotBlank()) {
+                return com.example.ai.ToolCall(
+                    id = "call_fast_phone_call_ko",
+                    type = "function",
+                    functionName = "phone_call",
+                    argumentsJson = "{\"contactName\":\"$target\"}"
+                )
+            }
+        }
+
+        // 7. Intelligent Analyzed Search Fast-Path
+        val searchRegex = Regex("""^(?:search karo ki|search karo|google pe search karo|google search|dhoondo|look up)\s+(.+)$""")
+        val searchMatch = searchRegex.find(lower)
+        if (searchMatch != null) {
+            val raw = searchMatch.groupValues[1].trim()
+            val refined = com.example.tools.WebActionTool.cleanAndRefineQuery(raw)
+            if (refined.isNotBlank()) {
+                return com.example.ai.ToolCall(
+                    id = "call_fast_search",
+                    type = "function",
+                    functionName = "web_search",
+                    argumentsJson = "{\"query\":\"$refined\",\"target\":\"web\"}"
+                )
+            }
+        }
+
         return null
     }
 
@@ -405,23 +526,25 @@ Address the user respectfully as "sir" when appropriate.
 Keep your verbal spoken answers brief, natural, elegant, confident, and actionable.
 
 You have access to Android tools to control the user's device:
-- open_app: Launch installed apps (e.g. YouTube, YouTube Studio, Camera, Spotify, Maps, Settings)
+- control_flashlight: Turns device flashlight / torch on or off immediately (action: 'on', 'off', 'toggle')
+- control_device: Controls volume, mute, or checks battery reserve status (command: 'battery_status', 'volume_up', 'volume_down', 'mute')
+- phone_call: Directly dials or calls a contact name or phone number immediately without asking redundant questions
+- open_app: Launch installed apps (e.g. YouTube, Camera, WhatsApp, Spotify, Settings)
 - launch_url: Open websites or web links
-- phone_call: Dial or call a phone number (requires confirmation if placing a call)
 - set_alarm: Set alarms with hour and minute
 - set_timer: Set countdown timers in seconds or minutes
 - control_media: Control playback (play, pause, next, previous, stop)
 - create_notification: Post reminders or alerts
 - open_settings: Open Wi-Fi, Bluetooth, Display, Battery, Sound, Apps, or General settings
 - search_contact: Search contacts address book by name
-- web_search: Search web or YouTube
-- send_message: Send or compose a WhatsApp message or SMS (e.g. "send message to John saying I will be late", "send WhatsApp message")
-- scroll_screen: Scroll the current open screen up/down/left/right or navigate back/home in WhatsApp, YouTube, Instagram, browser (e.g. "scroll down", "scroll up", "scroll", "go back")
+- web_search: Search web or YouTube. CRITICAL: Analyze the query to extract the core subject keywords rather than searching the user's raw conversational phrase.
+- send_message: Send or compose a WhatsApp message or SMS to a contact name or number
+- scroll_screen: Scroll the current open screen up/down/left/right or navigate back/home
 
 Guidelines:
-1. When asked to perform an action on the phone, invoke the corresponding tool.
-2. For sensitive actions (calling, publishing, deleting, changing major settings), verify with the user first.
-3. If an action requires unlocking the phone, note that politely.
+1. When asked to perform an action on the phone, invoke the corresponding tool immediately.
+2. For calls ("call Papa", "call Rahul"), call them immediately with phone_call. Do not stop to repeat the number.
+3. For search requests, extract and analyze the true keyword topic before invoking web_search.
 4. Keep spoken responses concise for voice output without Markdown bullet lists or symbols.
 """
     }

@@ -555,29 +555,29 @@ fun IronManMark85Centerpiece(
                     val w = size.width
                     val h = size.height
 
-                    // 1. Left Eye - Exact polygon strictly covering the eye slit (108..128 X, 217..225 Y out of 288x512)
+                    // 1. Left Eye - Exact polygon strictly covering the eye slit completely
                     val leftEyePath = Path().apply {
-                        moveTo(w * 0.375f, h * 0.426f)
-                        lineTo(w * 0.444f, h * 0.434f)
-                        lineTo(w * 0.444f, h * 0.440f)
-                        lineTo(w * 0.410f, h * 0.440f)
-                        lineTo(w * 0.375f, h * 0.430f)
+                        moveTo(w * 0.365f, h * 0.421f)
+                        lineTo(w * 0.454f, h * 0.427f)
+                        lineTo(w * 0.454f, h * 0.446f)
+                        lineTo(w * 0.400f, h * 0.446f)
+                        lineTo(w * 0.365f, h * 0.433f)
                         close()
                     }
 
-                    // 2. Right Eye - Exact polygon strictly covering the eye slit (158..178 X, 217..225 Y out of 288x512)
+                    // 2. Right Eye - Exact polygon strictly covering the eye slit completely
                     val rightEyePath = Path().apply {
-                        moveTo(w * 0.625f, h * 0.426f)
-                        lineTo(w * 0.556f, h * 0.434f)
-                        lineTo(w * 0.556f, h * 0.440f)
-                        lineTo(w * 0.590f, h * 0.440f)
-                        lineTo(w * 0.625f, h * 0.430f)
+                        moveTo(w * 0.635f, h * 0.421f)
+                        lineTo(w * 0.546f, h * 0.427f)
+                        lineTo(w * 0.546f, h * 0.446f)
+                        lineTo(w * 0.600f, h * 0.446f)
+                        lineTo(w * 0.635f, h * 0.433f)
                         close()
                     }
 
-                    // 3. Arc Reactor - Center at (0.498, 0.762), radius inside reactor boundary
+                    // 3. Arc Reactor - Center at (0.498, 0.762), radius encompasses the full reactor outer halo
                     val reactorCenter = Offset(w * 0.498f, h * 0.762f)
-                    val reactorRadius = w * 0.063f
+                    val reactorRadius = w * 0.082f
 
                     // When running, apply subtle tactical state glow strictly confined within eye/reactor bounds
                     if (isRunning && pulseAlpha > 0.05f) {

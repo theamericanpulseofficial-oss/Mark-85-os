@@ -30,7 +30,9 @@ data class JarvisSettings(
     val inworldApiKey: String = "",
     val inworldVoiceId: String = DEFAULT_INWORLD_VOICE,
     val inworldModel: String = DEFAULT_INWORLD_MODEL,
-    val inworldEndpoint: String = DEFAULT_INWORLD_ENDPOINT
+    val inworldEndpoint: String = DEFAULT_INWORLD_ENDPOINT,
+    val customInstructions: String = "",
+    val continuousListening: Boolean = true
 ) {
     // Convenience aliases
     val aiApiKey: String get() = nvidiaApiKey
@@ -155,7 +157,9 @@ CRITICAL FOR LOW LATENCY: Keep your spoken responses concise, direct, and under 
                 inworldApiKey = prefs.getString(SecurePreferencesHelper.KEY_INWORLD_API_KEY, ""),
                 inworldVoiceId = prefs.getString(SecurePreferencesHelper.KEY_INWORLD_VOICE_ID, DEFAULT_INWORLD_VOICE),
                 inworldModel = prefs.getString(SecurePreferencesHelper.KEY_INWORLD_MODEL, DEFAULT_INWORLD_MODEL),
-                inworldEndpoint = prefs.getString(SecurePreferencesHelper.KEY_INWORLD_ENDPOINT, DEFAULT_INWORLD_ENDPOINT)
+                inworldEndpoint = prefs.getString(SecurePreferencesHelper.KEY_INWORLD_ENDPOINT, DEFAULT_INWORLD_ENDPOINT),
+                customInstructions = prefs.getString(SecurePreferencesHelper.KEY_CUSTOM_INSTRUCTIONS, "Hinglish me baat karo. Natural, respectful, and concise answers do."),
+                continuousListening = prefs.getBoolean(SecurePreferencesHelper.KEY_CONTINUOUS_LISTENING, true)
             )
         }
 
@@ -184,6 +188,8 @@ CRITICAL FOR LOW LATENCY: Keep your spoken responses concise, direct, and under 
             prefs.saveString(SecurePreferencesHelper.KEY_INWORLD_VOICE_ID, settings.inworldVoiceId)
             prefs.saveString(SecurePreferencesHelper.KEY_INWORLD_MODEL, settings.inworldModel)
             prefs.saveString(SecurePreferencesHelper.KEY_INWORLD_ENDPOINT, settings.inworldEndpoint)
+            prefs.saveString(SecurePreferencesHelper.KEY_CUSTOM_INSTRUCTIONS, settings.customInstructions)
+            prefs.saveBoolean(SecurePreferencesHelper.KEY_CONTINUOUS_LISTENING, settings.continuousListening)
         }
     }
 }

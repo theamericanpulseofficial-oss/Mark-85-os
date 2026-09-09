@@ -55,69 +55,85 @@ class LocalWakeWordDetector(
             return
         }
 
-        val sampleRate = 16000
-        val channelConfig = AudioFormat.CHANNEL_IN_MONO
-        val audioFormat = AudioFormat.ENCODING_PCM_16BIT
-        val bufferSize = maxOf(
-            AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat),
-            2048
-        )
+        isListening = true
+        listeningJob = scope.launch(Dispatchers.IO) {
+            val sampleRate = 16000
+            val channelConfig = AudioFormat.CHANNEL_IN_MONO
+            val audioFormat = AudioFormat.ENCODING_PCM_16BIT
+            val minBuf = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat)
+            val bufferSize = maxOf(if (minBuf > 0) minBuf else 2048, 2048)
 
-        try {
-            audioRecord = AudioRecord(
-                MediaRecorder.AudioSource.MIC,
-                sampleRate,
-                channelConfig,
-                audioFormat,
-                bufferSize
-            )
-
-            if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
-                Log.e(TAG, "AudioRecord failed to initialize.")
-                return
+            var record: AudioRecord? = null
+            var attempts = 0
+            while (isActive && isListening && attempts < 5) {
+                try {
+                    record = AudioRecord(
+                        MediaRecorder.AudioSource.MIC,
+                        sampleRate,
+                        channelConfig,
+                        audioFormat,
+                        bufferSize
+                    )
+                    if (record.state == AudioRecord.STATE_INITIALIZED) {
+                        break
+                    } else {
+                        record.release()
+                        record = null
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Attempt $attempts initializing AudioRecord failed: ${e.message}")
+                }
+                attempts++
+                kotlinx.coroutines.delay(250)
             }
 
-            audioRecord?.startRecording()
-            isListening = true
+            if (record == null || record.state != AudioRecord.STATE_INITIALIZED) {
+                Log.e(TAG, "AudioRecord failed to initialize after retries.")
+                isListening = false
+                return@launch
+            }
 
-            listeningJob = scope.launch(Dispatchers.IO) {
-                val buffer = ShortArray(bufferSize / 2)
-                var consecutiveSpeechFrames = 0
-                val speechThreshold = (1800 * (1.2f - sensitivity.coerceIn(0.1f, 1.0f))).toInt()
+            audioRecord = record
+            try {
+                record.startRecording()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to startRecording: ${e.message}")
+                isListening = false
+                return@launch
+            }
 
-                while (isActive && isListening) {
-                    val readCount = audioRecord?.read(buffer, 0, buffer.size) ?: -1
-                    if (readCount > 0) {
-                        var energySum = 0L
-                        for (i in 0 until readCount) {
-                            energySum += abs(buffer[i].toInt())
+            val buffer = ShortArray(bufferSize / 2)
+            var consecutiveSpeechFrames = 0
+            val speechThreshold = (1800 * (1.2f - sensitivity.coerceIn(0.1f, 1.0f))).toInt()
+
+            while (isActive && isListening) {
+                val readCount = record.read(buffer, 0, buffer.size)
+                if (readCount > 0) {
+                    var energySum = 0L
+                    for (i in 0 until readCount) {
+                        energySum += abs(buffer[i].toInt())
+                    }
+                    val averageEnergy = energySum / readCount
+
+                    // Local Voice Activity / Keyword Trigger trigger
+                    if (averageEnergy > speechThreshold) {
+                        consecutiveSpeechFrames++
+                        if (consecutiveSpeechFrames >= 3) {
+                            consecutiveSpeechFrames = 0
+                            Log.d(TAG, "Wake word triggered locally.")
+                            launch(Dispatchers.Main) {
+                                onWakeWordDetected()
+                            }
                         }
-                        val averageEnergy = energySum / readCount
-
-                        // Local Voice Activity / Keyword Trigger trigger
-                        if (averageEnergy > speechThreshold) {
-                            consecutiveSpeechFrames++
-                            if (consecutiveSpeechFrames >= 3) {
-                                consecutiveSpeechFrames = 0
-                                Log.d(TAG, "Wake word triggered locally.")
-                                launch(Dispatchers.Main) {
-                                    onWakeWordDetected()
-                                }
-                            }
-                        } else {
-                            if (consecutiveSpeechFrames > 0) {
-                                consecutiveSpeechFrames--
-                            }
+                    } else {
+                        if (consecutiveSpeechFrames > 0) {
+                            consecutiveSpeechFrames--
                         }
                     }
+                } else if (readCount < 0) {
+                    kotlinx.coroutines.delay(50)
                 }
             }
-        } catch (e: SecurityException) {
-            Log.e(TAG, "SecurityException starting AudioRecord: ${e.message}")
-            stop()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in wake-word detection: ${e.message}")
-            stop()
         }
     }
 

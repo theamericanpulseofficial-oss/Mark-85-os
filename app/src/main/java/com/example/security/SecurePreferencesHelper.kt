@@ -163,5 +163,7 @@ class SecurePreferencesHelper(private val context: Context) {
         const val KEY_INWORLD_VOICE_ID = "inworld_voice_id"
         const val KEY_INWORLD_MODEL = "inworld_model"
         const val KEY_INWORLD_ENDPOINT = "inworld_endpoint"
+        const val KEY_CUSTOM_INSTRUCTIONS = "custom_instructions"
+        const val KEY_CONTINUOUS_LISTENING = "continuous_listening"
     }
 }

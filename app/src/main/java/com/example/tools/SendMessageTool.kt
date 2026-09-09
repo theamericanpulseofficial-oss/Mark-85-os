@@ -1,19 +1,22 @@
 package com.example.tools
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
-import android.telephony.SmsManager
+import android.provider.ContactsContract
+import androidx.core.content.ContextCompat
 import org.json.JSONObject
 
 /**
  * Tool for sending messages (SMS or WhatsApp).
- * Allows sending directly via SMS if permission granted, or launching WhatsApp/SMS prefilled chat.
+ * Resolves contact names to phone numbers automatically.
  */
 class SendMessageTool : PhoneTool {
     override val name: String = "send_message"
     override val description: String =
-        "Sends or drafts a message via WhatsApp or SMS to a contact or phone number."
+        "Sends or drafts a message via WhatsApp or SMS to a contact name (e.g. 'Papa', 'Rahul') or phone number."
     override val requiresConfirmation: Boolean = false
 
     override val parametersJson: String = """
@@ -27,7 +30,7 @@ class SendMessageTool : PhoneTool {
                 },
                 "recipient": {
                     "type": "string",
-                    "description": "Phone number with country code (e.g. '+919876543210') or contact name"
+                    "description": "Contact name (e.g. 'Papa', 'Rahul') or phone number with country code"
                 },
                 "message": {
                     "type": "string",
@@ -39,12 +42,12 @@ class SendMessageTool : PhoneTool {
     """.trimIndent()
 
     override suspend fun execute(context: Context, argumentsJson: String): ToolExecutionResult {
-        val (platform, recipient, message) = try {
+        val (platform, rawRecipient, message) = try {
             val json = JSONObject(argumentsJson)
             Triple(
                 json.optString("platform", "whatsapp").lowercase(),
-                json.optString("recipient", ""),
-                json.optString("message", "")
+                json.optString("recipient", "").trim(),
+                json.optString("message", "").trim()
             )
         } catch (e: Exception) {
             Triple("whatsapp", "", "")
@@ -58,12 +61,27 @@ class SendMessageTool : PhoneTool {
             )
         }
 
+        var resolvedPhone = ""
+        var displayName = rawRecipient
+
+        if (rawRecipient.isNotBlank()) {
+            // Check if it's already digits
+            val digitsOnly = rawRecipient.replace(Regex("[^0-9]"), "")
+            if (digitsOnly.length >= 10 && !rawRecipient.any { it.isLetter() }) {
+                resolvedPhone = digitsOnly
+            } else {
+                // Try resolving contact name
+                val contactNumber = resolveContactNumber(context, rawRecipient)
+                if (contactNumber != null) {
+                    resolvedPhone = contactNumber.replace(Regex("[^0-9]"), "")
+                }
+            }
+        }
+
         return try {
             if (platform == "whatsapp") {
-                // If clean phone number is provided (e.g. +91... or digits), open direct chat
-                val digits = recipient.replace(Regex("[^0-9]"), "")
-                val uri = if (digits.length >= 10) {
-                    Uri.parse("https://api.whatsapp.com/send?phone=$digits&text=${Uri.encode(message)}")
+                val uri = if (resolvedPhone.isNotBlank() && resolvedPhone.length >= 10) {
+                    Uri.parse("https://api.whatsapp.com/send?phone=$resolvedPhone&text=${Uri.encode(message)}")
                 } else {
                     Uri.parse("whatsapp://send?text=${Uri.encode(message)}")
                 }
@@ -77,8 +95,8 @@ class SendMessageTool : PhoneTool {
                     context.startActivity(intent)
                     ToolExecutionResult(
                         success = true,
-                        message = "Opened WhatsApp with message: \"$message\"",
-                        speechResponse = if (recipient.isNotBlank()) "Opening WhatsApp chat for $recipient with your message, sir." else "Opening WhatsApp to send your message, sir."
+                        message = "Opened WhatsApp for $displayName with message: \"$message\"",
+                        speechResponse = if (displayName.isNotBlank()) "Sending WhatsApp message to $displayName, sir." else "Opening WhatsApp to send your message, sir."
                     )
                 } catch (e: Exception) {
                     // Fallback to generic share or SMS if WhatsApp not installed
@@ -98,12 +116,8 @@ class SendMessageTool : PhoneTool {
                 }
             } else {
                 // SMS Intent
-                val smsUri = if (recipient.isNotBlank()) {
-                    val cleanNumber = recipient.replace(Regex("[^0-9+]"), "")
-                    Uri.parse("smsto:$cleanNumber")
-                } else {
-                    Uri.parse("smsto:")
-                }
+                val target = if (resolvedPhone.isNotBlank()) resolvedPhone else displayName.replace(Regex("[^0-9+]"), "")
+                val smsUri = if (target.isNotBlank()) Uri.parse("smsto:$target") else Uri.parse("smsto:")
                 val intent = Intent(Intent.ACTION_SENDTO, smsUri).apply {
                     putExtra("sms_body", message)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -112,7 +126,7 @@ class SendMessageTool : PhoneTool {
 
                 ToolExecutionResult(
                     success = true,
-                    message = "Opened SMS composer with text: \"$message\"",
+                    message = "Opened SMS composer for $displayName with text: \"$message\"",
                     speechResponse = "Opening SMS composer with your message, sir."
                 )
             }
@@ -122,6 +136,39 @@ class SendMessageTool : PhoneTool {
                 message = "Failed to send message: ${e.message}",
                 speechResponse = "Sir, I encountered an error preparing the message."
             )
+        }
+    }
+
+    private fun resolveContactNumber(context: Context, nameQuery: String): String? {
+        val hasPermission = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.READ_CONTACTS
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!hasPermission) return null
+
+        val projection = arrayOf(
+            ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+            ContactsContract.CommonDataKinds.Phone.NUMBER
+        )
+        val selection = "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?"
+        val selectionArgs = arrayOf("%$nameQuery%")
+
+        return try {
+            val cursor = context.contentResolver.query(
+                ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                projection,
+                selection,
+                selectionArgs,
+                null
+            )
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    val numberIndex = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                    if (numberIndex >= 0) it.getString(numberIndex) else null
+                } else null
+            }
+        } catch (e: Exception) {
+            null
         }
     }
 }

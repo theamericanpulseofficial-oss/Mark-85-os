@@ -135,6 +135,8 @@ fun SettingsScreen(
     var maxTokens by remember(currentSettings) { mutableIntStateOf(currentSettings.maxTokens) }
     var endpointUrl by remember(currentSettings) { mutableStateOf(currentSettings.nvidiaEndpoint) }
     var systemPrompt by remember(currentSettings) { mutableStateOf(currentSettings.systemPrompt) }
+    var customInstructions by remember(currentSettings) { mutableStateOf(currentSettings.customInstructions) }
+    var continuousListening by remember(currentSettings) { mutableStateOf(currentSettings.continuousListening) }
     var timeoutSeconds by remember(currentSettings) { mutableIntStateOf(currentSettings.timeoutSeconds) }
     var debugLogging by remember(currentSettings) { mutableStateOf(currentSettings.debugLogging) }
 
@@ -166,6 +168,8 @@ fun SettingsScreen(
             temperature = temperature,
             maxTokens = maxTokens,
             systemPrompt = systemPrompt.trim(),
+            customInstructions = customInstructions.trim(),
+            continuousListening = continuousListening,
             nvidiaEndpoint = endpointUrl.trim(),
             timeoutSeconds = timeoutSeconds,
             wakeWordEnabled = wakeWordEnabled,
@@ -1052,7 +1056,152 @@ fun SettingsScreen(
                 }
             }
 
-            // 5. ANDROID PERMISSIONS
+            // 5. CUSTOM INSTRUCTIONS & PERSONA (HINGLISH / PROMPTS)
+            SettingsSectionHeader(title = "AI PERSONA & CUSTOM INSTRUCTIONS", icon = Icons.Default.Psychology)
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = JarvisSurfaceDark),
+                shape = RoundedCornerShape(16.dp),
+                border = CardDefaults.outlinedCardBorder().copy(
+                    brush = androidx.compose.ui.graphics.SolidColor(JarvisCyan.copy(alpha = 0.35f))
+                )
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = "CUSTOM PROMPT & BEHAVIOR (E.G. HINGLISH)",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            color = JarvisCyan,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.sp
+                        )
+                    )
+
+                    Text(
+                        text = "Isko batayein ki aapke sath kaise baat kare. Jaise Hinglish me bolna, short answers dena, ya Tony Stark style.",
+                        color = Color(0xFF8FA3AD),
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        lineHeight = 16.sp
+                    )
+
+                    // Quick Preset Chips
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                customInstructions = "Hinglish me baat karo. Natural, friendly aur smart jawab do, jaise Iron Man ka JARVIS bolta hai. Sir bol kar baat karo."
+                                commitChanges()
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = if (customInstructions.contains("Hinglish")) JarvisCyan.copy(alpha = 0.15f) else Color.Transparent,
+                                contentColor = JarvisCyan
+                            )
+                        ) {
+                            Text("🇮🇳 Hinglish", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                customInstructions = "You are Tony Stark's Mark 85 OS J.A.R.V.I.S. Ultra-fast, razor-sharp, polite, address user as 'Sir'."
+                                commitChanges()
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = if (customInstructions.contains("Tony Stark")) JarvisCyan.copy(alpha = 0.15f) else Color.Transparent,
+                                contentColor = JarvisCyan
+                            )
+                        ) {
+                            Text("⚡ Stark OS", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                customInstructions = "Saral aur shuddh Hindi me uttar do. Short aur clear jawab do."
+                                commitChanges()
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = if (customInstructions.contains("shuddh Hindi")) JarvisCyan.copy(alpha = 0.15f) else Color.Transparent,
+                                contentColor = JarvisCyan
+                            )
+                        ) {
+                            Text("🇮🇳 Hindi", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = customInstructions,
+                        onValueChange = {
+                            customInstructions = it
+                            commitChanges()
+                        },
+                        label = { Text("Custom User Instructions", fontFamily = FontFamily.Monospace, fontSize = 12.sp) },
+                        placeholder = { Text("Jaise: Hinglish me bat kar, sab answers 1 line me do...", color = TextMuted) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("custom_instructions_input"),
+                        minLines = 3,
+                        maxLines = 6,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = JarvisCyan,
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedContainerColor = Color(0xFF0D161F),
+                            unfocusedContainerColor = Color(0xFF0D161F)
+                        ),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+
+                    // Continuous Background Listening Switch
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color(0xFF0D161F))
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Continuous Background Listening",
+                                color = TextPrimary,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 12.sp
+                            )
+                            Text(
+                                text = "Stays active in background without stopping after 5-6 seconds",
+                                color = Color(0xFF8FA3AD),
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                        Switch(
+                            checked = continuousListening,
+                            onCheckedChange = {
+                                continuousListening = it
+                                commitChanges()
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = JarvisCyan
+                            ),
+                            modifier = Modifier.testTag("continuous_listening_switch")
+                        )
+                    }
+                }
+            }
+
+            // 6. ANDROID PERMISSIONS
             SettingsSectionHeader(title = "SYSTEM PERMISSIONS", icon = Icons.Default.Security)
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -1065,6 +1214,18 @@ fun SettingsScreen(
                         desc = "Required for voice commands & wake-word",
                         permission = Manifest.permission.RECORD_AUDIO,
                         onRequest = { onRequestPermission(Manifest.permission.RECORD_AUDIO) }
+                    )
+                    PermissionStatusRow(
+                        name = "Flashlight & Camera (CAMERA)",
+                        desc = "Required to toggle phone torch and camera",
+                        permission = Manifest.permission.CAMERA,
+                        onRequest = { onRequestPermission(Manifest.permission.CAMERA) }
+                    )
+                    PermissionStatusRow(
+                        name = "Direct Messaging (SEND_SMS)",
+                        desc = "Enables sending SMS messages by voice",
+                        permission = Manifest.permission.SEND_SMS,
+                        onRequest = { onRequestPermission(Manifest.permission.SEND_SMS) }
                     )
                     PermissionStatusRow(
                         name = "Notifications (POST_NOTIFICATIONS)",

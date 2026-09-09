@@ -153,8 +153,11 @@ class JarvisForegroundService : Service() {
                 handleUserTranscript(transcript)
             },
             onError = { errorMsg ->
-                Log.w(TAG, "Speech capture error: $errorMsg")
-                startStandbyWakeWord()
+                Log.w(TAG, "Speech capture ended or timed out: $errorMsg")
+                serviceScope.launch {
+                    kotlinx.coroutines.delay(250)
+                    startStandbyWakeWord()
+                }
             }
         )
     }
@@ -180,8 +183,9 @@ class JarvisForegroundService : Service() {
             updateNotification(AgentState.SPEAKING.label)
 
             ttsEngine.speak(spokenResponse) {
-                // Speech finished -> return to wake-word standby
+                // Speech finished -> return to listening or standby
                 serviceScope.launch {
+                    kotlinx.coroutines.delay(200)
                     startStandbyWakeWord()
                 }
             }
@@ -263,7 +267,7 @@ class JarvisForegroundService : Service() {
                 PowerManager.PARTIAL_WAKE_LOCK,
                 "JARVIS:BackgroundVoiceWakeLock"
             )?.apply {
-                acquire(10 * 60 * 1000L /* 10 minutes max per active session */)
+                acquire()
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error acquiring wake lock: ${e.message}")
