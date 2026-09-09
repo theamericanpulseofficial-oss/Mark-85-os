@@ -103,8 +103,20 @@ class JarvisAgent(
         val keyguardManager = context.getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
         val isDeviceLocked = keyguardManager?.isKeyguardLocked == true
 
-        // ZERO-LATENCY FAST-PATH: Instant local execution for common voice commands (scroll, whatsapp, apps, etc.)
-        val fastToolCall = matchFastIntent(trimmed)
+        val cleaned = cleanSpeechCommand(trimmed)
+
+        // Local instant time / date response
+        val timeOrDateResponse = checkTimeOrDateQuery(cleaned)
+        if (timeOrDateResponse != null) {
+            _state.value = AgentState.SPEAKING
+            _lastResponse.value = timeOrDateResponse
+            conversationHistory.add(ChatMessage.user(trimmed))
+            conversationHistory.add(ChatMessage.assistant(timeOrDateResponse))
+            return timeOrDateResponse
+        }
+
+        // ZERO-LATENCY FAST-PATH: Instant local execution for common voice commands (torch, call, apps, volume, media)
+        val fastToolCall = matchFastIntent(cleaned) ?: matchFastIntent(trimmed)
         if (fastToolCall != null) {
             _state.value = AgentState.EXECUTING
             val result = toolRegistry.executeTool(fastToolCall.functionName, fastToolCall.argumentsJson)
@@ -303,11 +315,62 @@ class JarvisAgent(
     }
 
     /**
+     * Cleans conversational and wake-word prefixes so local commands match reliably.
+     */
+    private fun cleanSpeechCommand(raw: String): String {
+        var text = raw.lowercase().trim()
+        val wakeWordPrefixes = listOf(
+            "hey jarvis", "hi jarvis", "hello jarvis", "ok jarvis", "okay jarvis",
+            "oye jarvis", "aye jarvis", "bhai jarvis", "jarvis please", "jarvis"
+        )
+        for (prefix in wakeWordPrefixes) {
+            if (text.startsWith(prefix)) {
+                text = text.removePrefix(prefix).trim()
+                break
+            }
+        }
+        text = text.trim(',', '.', '!', '?', ' ')
+        val politePrefixes = listOf("please ", "zara ", "ek baar ", "bhai ", "sir ", "can you ", "could you ")
+        for (polite in politePrefixes) {
+            if (text.startsWith(polite)) {
+                text = text.removePrefix(polite).trim()
+            }
+        }
+        return text
+    }
+
+    /**
+     * Instant local date & time responses without requiring AI model roundtrips.
+     */
+    private fun checkTimeOrDateQuery(text: String): String? {
+        val lower = text.lowercase().trim()
+        val isTimeQuery = lower == "time" || lower == "what time" || lower == "what time is it" ||
+                lower.contains("time kya") || lower.contains("kitne baje") || lower.contains("samay kya") ||
+                lower.contains("current time") || lower == "time batao"
+        if (isTimeQuery) {
+            val sdf = java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault())
+            val formatted = sdf.format(java.util.Date())
+            return "The current time is $formatted, sir."
+        }
+
+        val isDateQuery = lower == "date" || lower == "what is the date" || lower == "what date is it" ||
+                lower.contains("date kya") || lower.contains("konsi date") || lower.contains("tarikh kya") ||
+                lower.contains("today's date") || lower.contains("aaj kya tarikh") || lower.contains("aaj konsa din")
+        if (isDateQuery) {
+            val sdf = java.text.SimpleDateFormat("EEEE, MMMM d, yyyy", java.util.Locale.getDefault())
+            val formatted = sdf.format(java.util.Date())
+            return "Today is $formatted, sir."
+        }
+
+        return null
+    }
+
+    /**
      * Matches obvious local commands (scroll, whatsapp, apps, media, alarms, navigation)
      * instantly without waiting for cloud LLM roundtrips, reducing latency to <50ms.
      */
     private fun matchFastIntent(text: String): com.example.ai.ToolCall? {
-        val lower = text.lowercase().trim()
+        val lower = cleanSpeechCommand(text)
 
         // 1. Screen Scrolling & Navigation (Hindi + English)
         if (lower == "scroll" || lower == "scroll kar" || lower == "scroll down" ||
@@ -361,12 +424,14 @@ class JarvisAgent(
             "instagram" to "Instagram",
             "settings" to "Settings",
             "gallery" to "Gallery",
-            "maps" to "Google Maps"
+            "maps" to "Google Maps",
+            "calculator" to "Calculator"
         )
         for ((trigger, appName) in appMap) {
-            if (lower == "open $trigger" || lower == "$trigger kholo" ||
-                lower == "$trigger open kar" || lower == "open $trigger app" ||
-                lower == "$trigger app kholo"
+            if (lower == "open $trigger" || lower.startsWith("open $trigger") ||
+                lower.contains("$trigger kholo") || lower.contains("$trigger khol") ||
+                lower.contains("$trigger open") || lower.contains("$trigger chalao") ||
+                lower.contains("$trigger app")
             ) {
                 return com.example.ai.ToolCall(
                     id = "call_fast_open_app",
@@ -378,7 +443,10 @@ class JarvisAgent(
         }
 
         // 3. Media Controls (play, pause, next, stop music)
-        if (lower == "pause" || lower == "pause music" || lower == "stop music" || lower == "gana roko" || lower == "roko") {
+        if (lower == "pause" || lower.contains("pause music") || lower.contains("stop music") ||
+            lower.contains("gana roko") || lower.contains("gana band") || lower == "roko" ||
+            lower.contains("music roko") || lower.contains("music band")
+        ) {
             return com.example.ai.ToolCall(
                 id = "call_fast_media_pause",
                 type = "function",
@@ -386,7 +454,9 @@ class JarvisAgent(
                 argumentsJson = "{\"action\":\"pause\"}"
             )
         }
-        if (lower == "play" || lower == "play music" || lower == "resume" || lower == "gana bajao" || lower == "chalao") {
+        if (lower == "play" || lower.contains("play music") || lower.contains("gana bajao") ||
+            lower.contains("gana chalao") || lower.contains("music chalao") || lower.contains("resume")
+        ) {
             return com.example.ai.ToolCall(
                 id = "call_fast_media_play",
                 type = "function",
@@ -394,7 +464,9 @@ class JarvisAgent(
                 argumentsJson = "{\"action\":\"play\"}"
             )
         }
-        if (lower == "next song" || lower == "next" || lower == "agla gana") {
+        if (lower == "next song" || lower.contains("next song") || lower.contains("agla gana") ||
+            lower.contains("change song") || lower.contains("next track")
+        ) {
             return com.example.ai.ToolCall(
                 id = "call_fast_media_next",
                 type = "function",
@@ -404,10 +476,10 @@ class JarvisAgent(
         }
 
         // 4. Flashlight / Torch Control (Instant Hardware Access)
-        if (lower == "torch on" || lower == "torch jalao" || lower == "torch chalao" ||
-            lower == "torch on karo" || lower == "flashlight on" || lower == "turn on flashlight" ||
-            lower == "turn on torch" || lower == "flash on" || lower == "light on" || lower == "light on karo"
-        ) {
+        val isTorchOn = lower.contains("torch on") || lower.contains("torch jala") || lower.contains("torch chalu") ||
+                lower.contains("flashlight on") || lower.contains("flash on") || lower.contains("light on") ||
+                lower.contains("light jala") || lower.contains("light chalu")
+        if (isTorchOn) {
             return com.example.ai.ToolCall(
                 id = "call_fast_torch_on",
                 type = "function",
@@ -415,10 +487,11 @@ class JarvisAgent(
                 argumentsJson = "{\"action\":\"on\"}"
             )
         }
-        if (lower == "torch off" || lower == "torch band karo" || lower == "torch bujhao" ||
-            lower == "torch off karo" || lower == "flashlight off" || lower == "turn off flashlight" ||
-            lower == "turn off torch" || lower == "flash off" || lower == "light off" || lower == "light band karo"
-        ) {
+
+        val isTorchOff = lower.contains("torch off") || lower.contains("torch band") || lower.contains("torch bujha") ||
+                lower.contains("flashlight off") || lower.contains("flash off") || lower.contains("light off") ||
+                lower.contains("light band") || lower.contains("light bujha")
+        if (isTorchOff) {
             return com.example.ai.ToolCall(
                 id = "call_fast_torch_off",
                 type = "function",
@@ -428,10 +501,7 @@ class JarvisAgent(
         }
 
         // 5. Battery & Volume Device Controls
-        if (lower == "battery" || lower == "battery kitni hai" || lower == "check battery" ||
-            lower == "battery percentage" || lower == "battery percent" || lower == "battery status" ||
-            lower == "charge kitna hai"
-        ) {
+        if (lower.contains("battery") || lower.contains("charge kitna") || lower.contains("charging kitni")) {
             return com.example.ai.ToolCall(
                 id = "call_fast_battery",
                 type = "function",
@@ -439,7 +509,10 @@ class JarvisAgent(
                 argumentsJson = "{\"command\":\"battery_status\"}"
             )
         }
-        if (lower == "volume up" || lower == "volume badhao" || lower == "awaz badhao" || lower == "awaz badao") {
+        if (lower.contains("volume up") || lower.contains("volume badh") || lower.contains("awaz badh") ||
+            lower.contains("awaz bada") || lower.contains("sound badh") || lower.contains("volume tej") ||
+            lower.contains("awaz tej") || lower.contains("volume full") || lower.contains("full volume")
+        ) {
             return com.example.ai.ToolCall(
                 id = "call_fast_volume_up",
                 type = "function",
@@ -447,7 +520,9 @@ class JarvisAgent(
                 argumentsJson = "{\"command\":\"volume_up\"}"
             )
         }
-        if (lower == "volume down" || lower == "volume kam karo" || lower == "awaz kam karo") {
+        if (lower.contains("volume down") || lower.contains("volume kam") || lower.contains("awaz kam") ||
+            lower.contains("sound kam") || lower.contains("volume dheere") || lower.contains("awaz dheere")
+        ) {
             return com.example.ai.ToolCall(
                 id = "call_fast_volume_down",
                 type = "function",
@@ -455,7 +530,7 @@ class JarvisAgent(
                 argumentsJson = "{\"command\":\"volume_down\"}"
             )
         }
-        if (lower == "mute" || lower == "silent karo" || lower == "awaz band karo") {
+        if (lower.contains("mute") || lower.contains("silent") || lower.contains("awaz band") || lower.contains("shant karo")) {
             return com.example.ai.ToolCall(
                 id = "call_fast_mute",
                 type = "function",
@@ -484,7 +559,7 @@ class JarvisAgent(
                 )
             }
         }
-        val callKoRegex = Regex("""^(.+?)\s+ko\s+(?:call karo|call lagao|phone lagao|phone karo)$""")
+        val callKoRegex = Regex("""^(.+?)\s+ko\s+(?:call karo|call lagao|phone lagao|phone karo|call|phone)$""")
         val callKoMatch = callKoRegex.find(lower)
         if (callKoMatch != null) {
             val target = callKoMatch.groupValues[1].trim()

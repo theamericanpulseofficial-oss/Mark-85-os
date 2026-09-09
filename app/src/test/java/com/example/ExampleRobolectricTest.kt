@@ -45,8 +45,8 @@ class ExampleRobolectricTest {
         val settings = JarvisSettings()
         assertEquals(JarvisSettings.DEFAULT_NVIDIA_AGENT_MODEL, settings.nvidiaModel)
         assertEquals(JarvisSettings.DEFAULT_NVIDIA_AGENT_MODEL, settings.voiceModel)
-        assertEquals(JarvisSettings.TTS_PROVIDER_INWORLD, settings.ttsProvider)
-        assertEquals("Dennis", settings.inworldVoiceId)
+        assertEquals(JarvisSettings.TTS_PROVIDER_ANDROID, settings.ttsProvider)
+        assertEquals(JarvisSettings.DEFAULT_INWORLD_VOICE, settings.inworldVoiceId)
     }
 
     @Test

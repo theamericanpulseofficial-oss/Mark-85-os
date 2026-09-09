@@ -1,5 +1,6 @@
 package com.example.service
 
+import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -11,6 +12,7 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.MainActivity
@@ -152,19 +154,22 @@ class JarvisForegroundService : Service() {
         _agentStateFlow.value = AgentState.LISTENING
         updateNotification(AgentState.LISTENING.label)
 
-        // Capture voice request without any Google Assistant sound
-        sttEngine.startListening(
-            onResult = { transcript ->
-                handleUserTranscript(transcript)
-            },
-            onError = { errorMsg ->
-                Log.w(TAG, "Speech capture ended or timed out: $errorMsg")
-                serviceScope.launch {
-                    kotlinx.coroutines.delay(200)
-                    startStandbyWakeWord()
+        // Capture voice request cleanly after letting AudioRecord release mic hardware
+        serviceScope.launch {
+            kotlinx.coroutines.delay(200)
+            sttEngine.startListening(
+                onResult = { transcript ->
+                    handleUserTranscript(transcript)
+                },
+                onError = { errorMsg ->
+                    Log.w(TAG, "Speech capture ended or timed out: $errorMsg")
+                    serviceScope.launch {
+                        kotlinx.coroutines.delay(350)
+                        startStandbyWakeWord()
+                    }
                 }
-            }
-        )
+            )
+        }
     }
 
     private fun handleUserTranscript(transcript: String) {
@@ -187,10 +192,22 @@ class JarvisForegroundService : Service() {
             _agentStateFlow.value = AgentState.SPEAKING
             updateNotification(AgentState.SPEAKING.label)
 
+            // Safety watchdog: If TTS hangs or completes without calling onComplete,
+            // ensure the assistant returns to standby wake-word listening reliably.
+            val watchdogJob = serviceScope.launch {
+                val waitTimeMs = (spokenResponse.length * 85L + 4000L).coerceIn(4000L, 14000L)
+                kotlinx.coroutines.delay(waitTimeMs)
+                if (_agentStateFlow.value == AgentState.SPEAKING) {
+                    Log.d(TAG, "TTS watchdog reached timeout. Safely returning to wake-word standby.")
+                    startStandbyWakeWord()
+                }
+            }
+
             ttsEngine.speak(spokenResponse) {
+                watchdogJob.cancel()
                 // Speech finished -> return to listening or standby
                 serviceScope.launch {
-                    kotlinx.coroutines.delay(200)
+                    kotlinx.coroutines.delay(350)
                     startStandbyWakeWord()
                 }
             }
@@ -254,6 +271,21 @@ class JarvisForegroundService : Service() {
         if (_isRunning.value) {
             startForegroundWithNotification()
             startStandbyWakeWord()
+            val restartIntent = Intent(applicationContext, JarvisForegroundService::class.java).apply {
+                action = ACTION_START
+            }
+            val restartPendingIntent = PendingIntent.getService(
+                applicationContext,
+                1001,
+                restartIntent,
+                PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val alarmService = getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+            alarmService?.set(
+                AlarmManager.ELAPSED_REALTIME,
+                SystemClock.elapsedRealtime() + 1000,
+                restartPendingIntent
+            )
         }
     }
 

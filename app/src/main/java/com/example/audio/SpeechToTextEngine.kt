@@ -49,18 +49,30 @@ class AndroidSpeechRecognizerEngine(private val context: Context) : SpeechToText
         initRecognizer()
     }
 
+    private var originalMusicVol: Int = -1
+    private var originalNotifVol: Int = -1
+    private var originalSystemVol: Int = -1
+
     private fun muteBeepSound(mute: Boolean) {
         try {
             audioManager?.let { am ->
                 if (mute) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                        am.adjustStreamVolume(AudioManager.STREAM_NOTIFICATION, AudioManager.ADJUST_MUTE, 0)
-                        am.adjustStreamVolume(AudioManager.STREAM_SYSTEM, AudioManager.ADJUST_MUTE, 0)
+                    if (originalMusicVol == -1) {
+                        originalMusicVol = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+                        originalNotifVol = am.getStreamVolume(AudioManager.STREAM_NOTIFICATION)
+                        originalSystemVol = am.getStreamVolume(AudioManager.STREAM_SYSTEM)
                     }
+                    am.setStreamVolume(AudioManager.STREAM_MUSIC, 0, 0)
+                    am.setStreamVolume(AudioManager.STREAM_NOTIFICATION, 0, 0)
+                    am.setStreamVolume(AudioManager.STREAM_SYSTEM, 0, 0)
                 } else {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                        am.adjustStreamVolume(AudioManager.STREAM_NOTIFICATION, AudioManager.ADJUST_UNMUTE, 0)
-                        am.adjustStreamVolume(AudioManager.STREAM_SYSTEM, AudioManager.ADJUST_UNMUTE, 0)
+                    if (originalMusicVol != -1) {
+                        am.setStreamVolume(AudioManager.STREAM_MUSIC, originalMusicVol, 0)
+                        am.setStreamVolume(AudioManager.STREAM_NOTIFICATION, originalNotifVol, 0)
+                        am.setStreamVolume(AudioManager.STREAM_SYSTEM, originalSystemVol, 0)
+                        originalMusicVol = -1
+                        originalNotifVol = -1
+                        originalSystemVol = -1
                     }
                 }
             }
