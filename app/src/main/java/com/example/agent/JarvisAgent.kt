@@ -93,6 +93,19 @@ class JarvisAgent(
         val keyguardManager = context.getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
         val isDeviceLocked = keyguardManager?.isKeyguardLocked == true
 
+        // ZERO-LATENCY FAST-PATH: Instant local execution for common voice commands (scroll, whatsapp, apps, etc.)
+        val fastToolCall = matchFastIntent(trimmed)
+        if (fastToolCall != null) {
+            _state.value = AgentState.EXECUTING
+            val result = toolRegistry.executeTool(fastToolCall.functionName, fastToolCall.argumentsJson)
+            _state.value = AgentState.SPEAKING
+            val responseText = result.speechResponse ?: result.message
+            _lastResponse.value = responseText
+            conversationHistory.add(ChatMessage.user(trimmed))
+            conversationHistory.add(ChatMessage.assistant(responseText))
+            return responseText
+        }
+
         _state.value = AgentState.THINKING
         conversationHistory.add(ChatMessage.user(trimmed))
 
@@ -277,6 +290,110 @@ class JarvisAgent(
         } catch (e: Exception) {
             "{\"isConfirmed\": true}"
         }
+    }
+
+    /**
+     * Matches obvious local commands (scroll, whatsapp, apps, media, alarms, navigation)
+     * instantly without waiting for cloud LLM roundtrips, reducing latency to <50ms.
+     */
+    private fun matchFastIntent(text: String): com.example.ai.ToolCall? {
+        val lower = text.lowercase().trim()
+
+        // 1. Screen Scrolling & Navigation (Hindi + English)
+        if (lower == "scroll" || lower == "scroll kar" || lower == "scroll down" ||
+            lower.contains("niche scroll") || lower.contains("neeche scroll") ||
+            lower.contains("scroll niche") || lower.contains("scroll neeche") ||
+            lower.contains("scroll down kar") || lower.contains("niche karo") ||
+            lower.contains("page scroll")
+        ) {
+            return com.example.ai.ToolCall(
+                id = "call_fast_scroll",
+                type = "function",
+                functionName = "scroll_screen",
+                argumentsJson = "{\"direction\":\"down\"}"
+            )
+        }
+        if (lower == "scroll up" || lower.contains("upar scroll") || lower.contains("uupal scroll") ||
+            lower.contains("scroll upar") || lower.contains("upar karo")
+        ) {
+            return com.example.ai.ToolCall(
+                id = "call_fast_scroll_up",
+                type = "function",
+                functionName = "scroll_screen",
+                argumentsJson = "{\"direction\":\"up\"}"
+            )
+        }
+        if (lower == "go back" || lower == "back" || lower == "back jao" || lower == "back kar" || lower == "peeche jao") {
+            return com.example.ai.ToolCall(
+                id = "call_fast_back",
+                type = "function",
+                functionName = "scroll_screen",
+                argumentsJson = "{\"direction\":\"back\"}"
+            )
+        }
+        if (lower == "go home" || lower == "home screen" || lower == "home screen jao") {
+            return com.example.ai.ToolCall(
+                id = "call_fast_home",
+                type = "function",
+                functionName = "scroll_screen",
+                argumentsJson = "{\"direction\":\"home\"}"
+            )
+        }
+
+        // 2. Direct App Launch (e.g. WhatsApp, YouTube, Camera, Spotify, Settings)
+        val appMap = mapOf(
+            "whatsapp" to "WhatsApp",
+            "youtube" to "YouTube",
+            "camera" to "Camera",
+            "chrome" to "Chrome",
+            "browser" to "Chrome",
+            "spotify" to "Spotify",
+            "instagram" to "Instagram",
+            "settings" to "Settings",
+            "gallery" to "Gallery",
+            "maps" to "Google Maps"
+        )
+        for ((trigger, appName) in appMap) {
+            if (lower == "open $trigger" || lower == "$trigger kholo" ||
+                lower == "$trigger open kar" || lower == "open $trigger app" ||
+                lower == "$trigger app kholo"
+            ) {
+                return com.example.ai.ToolCall(
+                    id = "call_fast_open_app",
+                    type = "function",
+                    functionName = "open_app",
+                    argumentsJson = "{\"appName\":\"$appName\"}"
+                )
+            }
+        }
+
+        // 3. Media Controls (play, pause, next, stop music)
+        if (lower == "pause" || lower == "pause music" || lower == "stop music" || lower == "gana roko" || lower == "roko") {
+            return com.example.ai.ToolCall(
+                id = "call_fast_media_pause",
+                type = "function",
+                functionName = "control_media",
+                argumentsJson = "{\"action\":\"pause\"}"
+            )
+        }
+        if (lower == "play" || lower == "play music" || lower == "resume" || lower == "gana bajao" || lower == "chalao") {
+            return com.example.ai.ToolCall(
+                id = "call_fast_media_play",
+                type = "function",
+                functionName = "control_media",
+                argumentsJson = "{\"action\":\"play\"}"
+            )
+        }
+        if (lower == "next song" || lower == "next" || lower == "agla gana") {
+            return com.example.ai.ToolCall(
+                id = "call_fast_media_next",
+                type = "function",
+                functionName = "control_media",
+                argumentsJson = "{\"action\":\"next\"}"
+            )
+        }
+
+        return null
     }
 
     companion object {

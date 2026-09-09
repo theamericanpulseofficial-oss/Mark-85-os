@@ -48,10 +48,10 @@ class InworldKokoroTtsEngine(
     private var audioFocusRequest: AudioFocusRequest? = null
 
     private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .writeTimeout(15, TimeUnit.SECONDS)
-        .retryOnConnectionFailure(true)
+        .connectTimeout(3, TimeUnit.SECONDS)
+        .readTimeout(5, TimeUnit.SECONDS)
+        .writeTimeout(3, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(false)
         .build()
 
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()

@@ -353,8 +353,8 @@ fun SettingsScreen(
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             listOf(
-                                "nvidia/nemotron-3-ultra-550b-a55b" to "Nemotron 550B 👑",
-                                "nvidia/nemotron-3-super-120b-a12b" to "Nemotron 120B ⚡"
+                                "llama-3.1-8b-instant" to "Llama 8B (Fastest) ⚡",
+                                "nvidia/nemotron-3-super-120b-a12b" to "Nemotron 120B 🧠"
                             ).forEach { (mId, mLabel) ->
                                 Box(
                                     modifier = Modifier
@@ -390,8 +390,8 @@ fun SettingsScreen(
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             listOf(
-                                "mistralai/mistral-nemotron" to "Mistral-Nemotron 🤖",
-                                "meta/llama-3.2-11b-vision-instruct" to "Llama 3.2 👁️",
+                                "nvidia/nemotron-3-ultra-550b-a55b" to "Nemotron 550B 👑",
+                                "mistralai/mistral-nemotron" to "Mistral 🤖",
                                 "openai/gpt-oss-20b" to "GPT-OSS 🚀"
                             ).forEach { (mId, mLabel) ->
                                 Box(
@@ -644,12 +644,12 @@ fun SettingsScreen(
                                 .weight(1f)
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(
-                                    if (ttsProvider == JarvisSettings.TTS_PROVIDER_ANDROID) Color.White.copy(alpha = 0.12f)
+                                    if (ttsProvider == JarvisSettings.TTS_PROVIDER_ANDROID) JarvisCyan.copy(alpha = 0.22f)
                                     else Color.Transparent
                                 )
                                 .border(
                                     1.dp,
-                                    if (ttsProvider == JarvisSettings.TTS_PROVIDER_ANDROID) Color.White.copy(alpha = 0.4f)
+                                    if (ttsProvider == JarvisSettings.TTS_PROVIDER_ANDROID) JarvisCyan.copy(alpha = 0.6f)
                                     else Color.Transparent,
                                     RoundedCornerShape(8.dp)
                                 )
@@ -662,15 +662,15 @@ fun SettingsScreen(
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text(
-                                    text = "Android Native",
-                                    color = if (ttsProvider == JarvisSettings.TTS_PROVIDER_ANDROID) TextPrimary else TextSecondary,
+                                    text = "Android Native ⚡",
+                                    color = if (ttsProvider == JarvisSettings.TTS_PROVIDER_ANDROID) JarvisCyan else TextSecondary,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 12.sp,
                                     fontFamily = FontFamily.Monospace
                                 )
                                 Text(
-                                    text = "Offline Default",
-                                    color = TextMuted,
+                                    text = "Ultra-Fast (0s Lag)",
+                                    color = if (ttsProvider == JarvisSettings.TTS_PROVIDER_ANDROID) JarvisOnlineGreen else TextMuted,
                                     fontSize = 10.sp,
                                     fontFamily = FontFamily.Monospace
                                 )
