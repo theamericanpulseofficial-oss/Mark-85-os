@@ -32,7 +32,8 @@ data class JarvisSettings(
     val inworldModel: String = DEFAULT_INWORLD_MODEL,
     val inworldEndpoint: String = DEFAULT_INWORLD_ENDPOINT,
     val customInstructions: String = "",
-    val continuousListening: Boolean = true
+    val continuousListening: Boolean = true,
+    val filterPhoneSpeakerAudio: Boolean = true
 ) {
     // Convenience aliases
     val aiApiKey: String get() = nvidiaApiKey
@@ -159,7 +160,8 @@ CRITICAL FOR LOW LATENCY: Keep your spoken responses concise, direct, and under 
                 inworldModel = prefs.getString(SecurePreferencesHelper.KEY_INWORLD_MODEL, DEFAULT_INWORLD_MODEL),
                 inworldEndpoint = prefs.getString(SecurePreferencesHelper.KEY_INWORLD_ENDPOINT, DEFAULT_INWORLD_ENDPOINT),
                 customInstructions = prefs.getString(SecurePreferencesHelper.KEY_CUSTOM_INSTRUCTIONS, "Hinglish me baat karo. Natural, respectful, and concise answers do."),
-                continuousListening = prefs.getBoolean(SecurePreferencesHelper.KEY_CONTINUOUS_LISTENING, true)
+                continuousListening = prefs.getBoolean(SecurePreferencesHelper.KEY_CONTINUOUS_LISTENING, true),
+                filterPhoneSpeakerAudio = prefs.getBoolean(SecurePreferencesHelper.KEY_FILTER_PHONE_SPEAKER, true)
             )
         }
 
@@ -190,6 +192,7 @@ CRITICAL FOR LOW LATENCY: Keep your spoken responses concise, direct, and under 
             prefs.saveString(SecurePreferencesHelper.KEY_INWORLD_ENDPOINT, settings.inworldEndpoint)
             prefs.saveString(SecurePreferencesHelper.KEY_CUSTOM_INSTRUCTIONS, settings.customInstructions)
             prefs.saveBoolean(SecurePreferencesHelper.KEY_CONTINUOUS_LISTENING, settings.continuousListening)
+            prefs.saveBoolean(SecurePreferencesHelper.KEY_FILTER_PHONE_SPEAKER, settings.filterPhoneSpeakerAudio)
         }
     }
 }

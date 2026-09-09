@@ -9,6 +9,7 @@ import com.example.tools.OpenAppTool
 import com.example.tools.TimerTool
 import com.example.tools.ToolRegistry
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -63,5 +64,13 @@ class ExampleRobolectricTest {
         assertTrue(label.contains("JARVIS"))
         assertTrue(label.contains("HEY JARVIS"))
         assertTrue(label.contains("OK JARVIS"))
+    }
+
+    @Test
+    fun `filter phone speaker audio is enabled by default`() {
+        val settings = JarvisSettings()
+        assertTrue(settings.filterPhoneSpeakerAudio)
+        val modified = settings.copy(filterPhoneSpeakerAudio = false)
+        assertFalse(modified.filterPhoneSpeakerAudio)
     }
 }

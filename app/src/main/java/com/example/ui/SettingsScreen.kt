@@ -153,6 +153,7 @@ fun SettingsScreen(
 
     var wakeWordEnabled by remember(currentSettings) { mutableStateOf(currentSettings.wakeWordEnabled) }
     var wakeWordSensitivity by remember(currentSettings) { mutableFloatStateOf(currentSettings.wakeWordSensitivity) }
+    var filterPhoneSpeaker by remember(currentSettings) { mutableStateOf(currentSettings.filterPhoneSpeakerAudio) }
     var ttsSpeed by remember(currentSettings) { mutableFloatStateOf(currentSettings.ttsSpeed) }
     var ttsPitch by remember(currentSettings) { mutableFloatStateOf(currentSettings.ttsPitch) }
 
@@ -175,6 +176,7 @@ fun SettingsScreen(
             timeoutSeconds = timeoutSeconds,
             wakeWordEnabled = wakeWordEnabled,
             wakeWordSensitivity = wakeWordSensitivity,
+            filterPhoneSpeakerAudio = filterPhoneSpeaker,
             ttsSpeed = ttsSpeed,
             ttsPitch = ttsPitch,
             debugLogging = debugLogging,
@@ -1317,6 +1319,41 @@ fun SettingsScreen(
                             ),
                             modifier = Modifier.testTag("wake_word_sensitivity_slider")
                         )
+
+                        // Phone Speaker Rejection Switch
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Ignore Phone Speaker Sound",
+                                    color = TextPrimary,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 12.sp
+                                )
+                                Text(
+                                    text = "Prevents YouTube, Reels, music, and videos playing from this phone's speaker from accidentally waking Jarvis",
+                                    color = Color(0xFF8FA3AD),
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                            Switch(
+                                checked = filterPhoneSpeaker,
+                                onCheckedChange = {
+                                    filterPhoneSpeaker = it
+                                    commitChanges()
+                                },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = JarvisCyan
+                                ),
+                                modifier = Modifier.testTag("filter_phone_speaker_switch")
+                            )
+                        }
                     }
                 }
             }

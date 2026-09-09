@@ -3,9 +3,14 @@ package com.example.wakeword
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.media.AudioAttributes
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.media.audiofx.AcousticEchoCanceler
+import android.media.audiofx.NoiseSuppressor
+import android.os.Build
 import android.util.Log
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
@@ -30,19 +35,30 @@ interface WakeWordDetector {
 }
 
 /**
- * High-performance, local wake-word detector strictly recognizing "Jarvis" / "Hey Jarvis".
+ * High-performance, local wake-word detector strictly recognizing "Jarvis", "Hey Jarvis", or "Ok Jarvis".
  * Uses a pure, silent AudioRecord stream (ZERO Google Assistant beeps/chimes, ZERO audio toggling).
- * Analyzes acoustic phonetics: Voiced vowel ("Jar") -> Inter-syllabic dip -> High-ZCR Fricative tail ("-vis").
- * Completely rejects ambient noises, phone taps, coughs, and unrelated speech.
+ *
+ * Anti-Self Speaker Protection:
+ * - Employs hardware AcousticEchoCanceler (AEC) and NoiseSuppressor (NS) to cancel speaker audio.
+ * - Monitors AudioManager and ActivePlaybackConfigurations to actively reject audio playing
+ *   from this phone's own speaker (YouTube, Reels, Music, Podcasts, TTS, Games).
+ * - Analyzes acoustic phonetics: Resonant Voiced vowel ("Jar") -> Inter-syllabic dip -> High-ZCR Fricative tail ("-vis").
+ * - Rejects percussive drum transients, cymbals, ambient noises, phone taps, coughs, and unrelated media.
  */
 class LocalWakeWordDetector(
     private val context: Context,
     private val scope: CoroutineScope,
     private val picovoiceAccessKey: String = "",
-    private val sensitivity: Float = 0.5f
+    private val sensitivity: Float = 0.5f,
+    private val filterPhoneSpeakerAudio: Boolean = true
 ) : WakeWordDetector {
 
     private var audioRecord: AudioRecord? = null
+    private var echoCanceler: AcousticEchoCanceler? = null
+    private var noiseSuppressor: NoiseSuppressor? = null
+    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+    private var lastSpeakerActiveTime: Long = 0L
+
     private var listeningJob: Job? = null
     private var onDetectedCallback: ((String?) -> Unit)? = null
 
@@ -58,6 +74,98 @@ class LocalWakeWordDetector(
         val zcr: Float,
         val isVoice: Boolean
     )
+
+    /**
+     * Checks if the device's internal speaker / audio subsystem is actively playing
+     * sound (e.g. YouTube, Reels, Music, Games, In-app TTS, Ringtone, Calls).
+     */
+    private fun isPhoneSpeakerActive(): Boolean {
+        val am = audioManager ?: return false
+        try {
+            // 1. Music, media, video, or podcast stream currently playing on device
+            if (am.isMusicActive) {
+                return true
+            }
+
+            // 2. Call, VoIP, or ringtone stream active
+            if (am.mode != AudioManager.MODE_NORMAL) {
+                return true
+            }
+
+            // 3. API 26+ active playback configurations check
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val configs = am.activePlaybackConfigurations
+                for (config in configs) {
+                    val usage = config.audioAttributes?.usage ?: continue
+                    if (usage == AudioAttributes.USAGE_MEDIA ||
+                        usage == AudioAttributes.USAGE_GAME ||
+                        usage == AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE ||
+                        usage == AudioAttributes.USAGE_ASSISTANT ||
+                        usage == AudioAttributes.USAGE_VOICE_COMMUNICATION ||
+                        usage == AudioAttributes.USAGE_NOTIFICATION_RINGTONE
+                    ) {
+                        return true
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Speaker active check warning: ${e.message}")
+        }
+        return false
+    }
+
+    private fun checkDeviceSpeakerActive(): Boolean {
+        if (!filterPhoneSpeakerAudio) return false
+        val now = System.currentTimeMillis()
+        if (isPhoneSpeakerActive()) {
+            lastSpeakerActiveTime = now
+            return true
+        }
+        // Retain active suppression for 500ms after audio playback ends to swallow room echo & reverb
+        return (now - lastSpeakerActiveTime) < 500L
+    }
+
+    private fun attachAudioEffects(audioSessionId: Int) {
+        try {
+            if (AcousticEchoCanceler.isAvailable()) {
+                echoCanceler = AcousticEchoCanceler.create(audioSessionId)?.apply {
+                    enabled = true
+                    Log.i(TAG, "Hardware AcousticEchoCanceler (AEC) active on session $audioSessionId")
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Unable to initialize AcousticEchoCanceler: ${e.message}")
+        }
+
+        try {
+            if (NoiseSuppressor.isAvailable()) {
+                noiseSuppressor = NoiseSuppressor.create(audioSessionId)?.apply {
+                    enabled = true
+                    Log.i(TAG, "Hardware NoiseSuppressor active on session $audioSessionId")
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Unable to initialize NoiseSuppressor: ${e.message}")
+        }
+    }
+
+    private fun releaseAudioEffects() {
+        try {
+            echoCanceler?.release()
+        } catch (e: Exception) {
+            // Ignored
+        } finally {
+            echoCanceler = null
+        }
+
+        try {
+            noiseSuppressor?.release()
+        } catch (e: Exception) {
+            // Ignored
+        } finally {
+            noiseSuppressor = null
+        }
+    }
 
     override fun start(onWakeWordDetected: (command: String?) -> Unit) {
         if (isListening) return
@@ -102,6 +210,7 @@ class LocalWakeWordDetector(
                     bufferSize
                 )
                 if (record.state == AudioRecord.STATE_INITIALIZED) {
+                    attachAudioEffects(record.audioSessionId)
                     break
                 } else {
                     record.release()
@@ -124,6 +233,9 @@ class LocalWakeWordDetector(
                     audioFormat,
                     bufferSize
                 )
+                if (record.state == AudioRecord.STATE_INITIALIZED) {
+                    attachAudioEffects(record.audioSessionId)
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Fallback to MIC failed: ${e.message}")
             }
@@ -138,7 +250,7 @@ class LocalWakeWordDetector(
         audioRecord = record
         try {
             record.startRecording()
-            Log.d(TAG, "Silent continuous Wake-Word engine active (monitoring 'Jarvis' / 'Hey Jarvis')")
+            Log.d(TAG, "Silent continuous Wake-Word engine active (monitoring 'Jarvis' / 'Hey Jarvis' / 'Ok Jarvis')")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to startRecording: ${e.message}")
             isListening = false
@@ -176,6 +288,22 @@ class LocalWakeWordDetector(
             }
             val rms = sqrt(sumSquare / readCount).toFloat()
             val zcr = zeroCrossings.toFloat() / (readCount - 1)
+
+            // ANTI-SELF SPEAKER PROTECTION:
+            // Check if phone's own speaker is actively playing audio (YouTube, Reels, Music, Games, TTS)
+            val speakerIsActive = checkDeviceSpeakerActive()
+            if (speakerIsActive) {
+                // Drop accumulated frames so speaker audio doesn't trigger false wake-ups!
+                if (utteranceFrames.isNotEmpty()) {
+                    utteranceFrames.clear()
+                }
+                silenceCounter = 0
+                // Adapt noise floor upward to the speaker playback level
+                if (rms > noiseFloor) {
+                    noiseFloor = 0.90f * noiseFloor + 0.10f * rms
+                }
+                continue
+            }
 
             // Dynamic noise floor tracking during silence
             if (rms < noiseFloor * 1.4f) {
@@ -218,6 +346,7 @@ class LocalWakeWordDetector(
                                 isListening = false
                                 utteranceFrames.clear()
                                 silenceCounter = 0
+                                releaseAudioEffects()
                                 try {
                                     record.stop()
                                     record.release()
@@ -240,6 +369,7 @@ class LocalWakeWordDetector(
         }
 
         // Clean up on exit if still open
+        releaseAudioEffects()
         try {
             audioRecord?.stop()
             audioRecord?.release()
@@ -264,7 +394,7 @@ class LocalWakeWordDetector(
      * Acoustic Invariants across all 3:
      * - Ends in "-VIS": Sibilant alveolar fricative /s/ in the terminal tail (high ZCR)
      * - Preceded by Inter-syllabic Dip: Amplitude drops significantly before the fricative tail
-     * - Resonant Core "JAR": High RMS with low ZCR (0.03 - 0.24)
+     * - Resonant Core "JAR": High RMS with low ZCR (0.03 - 0.22)
      * - Prefixes "Hey" or "Ok": Precede the "JAR" core in duration and frame offset
      */
     private fun evaluateWakeWordAcoustics(
@@ -285,13 +415,31 @@ class LocalWakeWordDetector(
         }
 
         // 2. Fricative /s/ tail check: "-vis" must be in the final 30% of frames
-        val tailStartIndex = (n * 0.70f).toInt().coerceAtMost(n - 3)
+        val tailStartIndex = (n * 0.70f).toInt().coerceAtMost(n - 4)
         val tailFrames = frames.subList(tailStartIndex, n)
-        val targetZcr = (minZcrThreshold * 0.95f).coerceAtLeast(0.30f)
+        val targetZcr = (minZcrThreshold * 1.05f).coerceAtLeast(0.34f)
         val highZcrTailCount = tailFrames.count { it.zcr >= targetZcr }
         val avgZcrTail = tailFrames.map { it.zcr }.average().toFloat()
 
-        if (highZcrTailCount < 2 && avgZcrTail < 0.26f) {
+        // Sibilant fricative in "-vis" requires sustained high ZCR (at least 3 frames = 60ms)
+        if (highZcrTailCount < 3 || avgZcrTail < 0.30f) {
+            return WakeWordMatch(false)
+        }
+
+        // Consecutive high-ZCR check: Rejects single-frame drum clicks / cymbals
+        var consecutiveHighZcr = 0
+        var maxConsecutiveHighZcr = 0
+        for (f in tailFrames) {
+            if (f.zcr >= targetZcr * 0.92f) {
+                consecutiveHighZcr++
+                if (consecutiveHighZcr > maxConsecutiveHighZcr) {
+                    maxConsecutiveHighZcr = consecutiveHighZcr
+                }
+            } else {
+                consecutiveHighZcr = 0
+            }
+        }
+        if (maxConsecutiveHighZcr < 2) {
             return WakeWordMatch(false)
         }
 
@@ -303,7 +451,7 @@ class LocalWakeWordDetector(
 
         for (i in preTailFrames.indices) {
             val f = preTailFrames[i]
-            if (f.zcr in 0.03f..0.24f && f.rms > peakRms * 0.32f && f.rms > 480f) {
+            if (f.zcr in 0.03f..0.22f && f.rms > peakRms * 0.35f && f.rms > 500f) {
                 consecutiveVoiced++
                 if (consecutiveVoiced >= 3) {
                     foundVoicedCore = true
@@ -319,16 +467,15 @@ class LocalWakeWordDetector(
         }
 
         // 4. Syllable energy dip check: Between the voiced core and the tail
-        var hasDip = false
+        var dipFramesCount = 0
         val searchDipStart = (coreStartIndex.coerceAtLeast(0) + 2).coerceAtMost(tailStartIndex - 1)
         for (i in searchDipStart until tailStartIndex) {
             if (frames[i].rms < peakRms * 0.58f) {
-                hasDip = true
-                break
+                dipFramesCount++
             }
         }
 
-        if (!hasDip) {
+        if (dipFramesCount < 2) {
             return WakeWordMatch(false)
         }
 
@@ -341,7 +488,7 @@ class LocalWakeWordDetector(
 
         Log.d(
             TAG,
-            "Wake-Word Acoustic Pass: '$detectedWord' [frames=$n, peakRms=%.1f, highZcrTailCount=$highZcrTailCount, coreIdx=$coreStartIndex, dip=$hasDip]".format(
+            "Wake-Word Acoustic Pass: '$detectedWord' [frames=$n, peakRms=%.1f, highZcrTailCount=$highZcrTailCount, maxConsZcr=$maxConsecutiveHighZcr, coreIdx=$coreStartIndex, dipFrames=$dipFramesCount]".format(
                 peakRms
             )
         )
@@ -353,6 +500,7 @@ class LocalWakeWordDetector(
         isListening = false
         listeningJob?.cancel()
         listeningJob = null
+        releaseAudioEffects()
         try {
             audioRecord?.stop()
             audioRecord?.release()

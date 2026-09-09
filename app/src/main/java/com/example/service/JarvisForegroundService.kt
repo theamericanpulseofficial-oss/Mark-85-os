@@ -131,7 +131,8 @@ class JarvisForegroundService : Service() {
                 context = this,
                 scope = serviceScope,
                 picovoiceAccessKey = settings.picovoiceAccessKey,
-                sensitivity = settings.wakeWordSensitivity
+                sensitivity = settings.wakeWordSensitivity,
+                filterPhoneSpeakerAudio = settings.filterPhoneSpeakerAudio
             ).apply {
                 start { directCommand ->
                     onWakeWordTriggered(directCommand)
