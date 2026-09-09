@@ -88,11 +88,10 @@ class SendMessageTool : PhoneTool {
 
                 val intent = Intent(Intent.ACTION_VIEW, uri).apply {
                     setPackage("com.whatsapp")
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
 
                 try {
-                    context.startActivity(intent)
+                    AppLauncherHelper.launchIntent(context, intent, "WhatsApp to $displayName")
                     ToolExecutionResult(
                         success = true,
                         message = "Opened WhatsApp for $displayName with message: \"$message\"",
@@ -103,11 +102,9 @@ class SendMessageTool : PhoneTool {
                     val sendIntent = Intent(Intent.ACTION_SEND).apply {
                         type = "text/plain"
                         putExtra(Intent.EXTRA_TEXT, message)
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
-                    context.startActivity(Intent.createChooser(sendIntent, "Send Message").apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    })
+                    val chooser = Intent.createChooser(sendIntent, "Send Message")
+                    AppLauncherHelper.launchIntent(context, chooser, "Message")
                     ToolExecutionResult(
                         success = true,
                         message = "WhatsApp not available, opened message chooser.",
@@ -120,9 +117,8 @@ class SendMessageTool : PhoneTool {
                 val smsUri = if (target.isNotBlank()) Uri.parse("smsto:$target") else Uri.parse("smsto:")
                 val intent = Intent(Intent.ACTION_SENDTO, smsUri).apply {
                     putExtra("sms_body", message)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
-                context.startActivity(intent)
+                AppLauncherHelper.launchIntent(context, intent, "SMS to $displayName")
 
                 ToolExecutionResult(
                     success = true,

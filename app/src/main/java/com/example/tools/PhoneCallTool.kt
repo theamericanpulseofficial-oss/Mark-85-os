@@ -83,10 +83,8 @@ class PhoneCallTool : PhoneTool {
                 Intent(Intent.ACTION_CALL, Uri.parse("tel:${Uri.encode(numberToDial)}"))
             } else {
                 Intent(Intent.ACTION_DIAL, Uri.parse("tel:${Uri.encode(numberToDial)}"))
-            }.apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            context.startActivity(intent)
+            AppLauncherHelper.launchIntent(context, intent, "Call to $displayName")
 
             ToolExecutionResult(
                 success = true,

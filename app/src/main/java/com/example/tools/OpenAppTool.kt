@@ -88,8 +88,7 @@ class OpenAppTool : PhoneTool {
 
         val launchIntent = pm.getLaunchIntentForPackage(targetPackage)
         return if (launchIntent != null) {
-            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(launchIntent)
+            AppLauncherHelper.launchIntent(context, launchIntent, appName)
             ToolExecutionResult(
                 success = true,
                 message = "Successfully opened $appName ($targetPackage).",

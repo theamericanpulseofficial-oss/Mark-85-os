@@ -143,6 +143,7 @@ class JarvisForegroundService : Service() {
 
     private fun onWakeWordTriggered(directCommand: String? = null) {
         Log.d(TAG, "Wake word detected (Jarvis / Hey Jarvis / Ok Jarvis). Direct command: $directCommand")
+        triggerWakeHaptic()
         wakeWordDetector?.stop()
 
         if (!directCommand.isNullOrBlank()) {
@@ -271,9 +272,11 @@ class JarvisForegroundService : Service() {
         Log.d(TAG, "onTaskRemoved: Activity swiped/closed. Maintaining active background assistant.")
         if (_isRunning.value) {
             startForegroundWithNotification()
+            acquireWakeLock()
             startStandbyWakeWord()
             val restartIntent = Intent(applicationContext, JarvisForegroundService::class.java).apply {
                 action = ACTION_START
+                setPackage(packageName)
             }
             val restartPendingIntent = PendingIntent.getService(
                 applicationContext,
@@ -282,11 +285,43 @@ class JarvisForegroundService : Service() {
                 PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
             )
             val alarmService = getSystemService(Context.ALARM_SERVICE) as? AlarmManager
-            alarmService?.set(
-                AlarmManager.ELAPSED_REALTIME,
-                SystemClock.elapsedRealtime() + 1000,
-                restartPendingIntent
-            )
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    alarmService?.setExactAndAllowWhileIdle(
+                        AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                        SystemClock.elapsedRealtime() + 500,
+                        restartPendingIntent
+                    )
+                } else {
+                    alarmService?.set(
+                        AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                        SystemClock.elapsedRealtime() + 500,
+                        restartPendingIntent
+                    )
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to schedule exact alarm: ${e.message}")
+            }
+        }
+    }
+
+    private fun triggerWakeHaptic() {
+        try {
+            val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? android.os.VibratorManager
+                vibratorManager?.defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                getSystemService(Context.VIBRATOR_SERVICE) as? android.os.Vibrator
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator?.vibrate(android.os.VibrationEffect.createOneShot(80, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator?.vibrate(80)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Vibration failed: ${e.message}")
         }
     }
 
@@ -313,12 +348,17 @@ class JarvisForegroundService : Service() {
 
     private fun acquireWakeLock() {
         try {
-            val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
-            wakeLock = powerManager?.newWakeLock(
-                PowerManager.PARTIAL_WAKE_LOCK,
-                "JARVIS:BackgroundVoiceWakeLock"
-            )?.apply {
-                acquire()
+            if (wakeLock == null) {
+                val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
+                wakeLock = powerManager?.newWakeLock(
+                    PowerManager.PARTIAL_WAKE_LOCK,
+                    "JARVIS:BackgroundVoiceWakeLock"
+                )?.apply {
+                    setReferenceCounted(false)
+                }
+            }
+            if (wakeLock?.isHeld == false) {
+                wakeLock?.acquire()
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error acquiring wake lock: ${e.message}")

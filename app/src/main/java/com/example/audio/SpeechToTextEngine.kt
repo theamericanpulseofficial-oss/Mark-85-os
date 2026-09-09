@@ -83,15 +83,27 @@ class AndroidSpeechRecognizerEngine(private val context: Context) : SpeechToText
 
     private fun initRecognizer() {
         mainHandler.post {
-            if (SpeechRecognizer.isRecognitionAvailable(context)) {
+            val appContext = context.applicationContext
+            if (SpeechRecognizer.isRecognitionAvailable(appContext)) {
                 try {
-                    speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
-                        setRecognitionListener(createListener())
-                    }
+                    speechRecognizer = createSpeechRecognizerInstance()
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to create SpeechRecognizer: ${e.message}")
                 }
             }
+        }
+    }
+
+    private fun createSpeechRecognizerInstance(): SpeechRecognizer {
+        val appContext = context.applicationContext
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            SpeechRecognizer.isOnDeviceRecognitionAvailable(appContext)
+        ) {
+            SpeechRecognizer.createOnDeviceSpeechRecognizer(appContext)
+        } else {
+            SpeechRecognizer.createSpeechRecognizer(appContext)
+        }.apply {
+            setRecognitionListener(createListener())
         }
     }
 
@@ -114,6 +126,11 @@ class AndroidSpeechRecognizerEngine(private val context: Context) : SpeechToText
             override fun onError(error: Int) {
                 isListening = false
                 muteBeepSound(false)
+                try {
+                    speechRecognizer?.destroy()
+                } catch (_: Exception) {}
+                speechRecognizer = null
+
                 val errorMsg = when (error) {
                     SpeechRecognizer.ERROR_AUDIO -> "Audio recording error"
                     SpeechRecognizer.ERROR_CLIENT -> "Speech recognition client error"
@@ -126,6 +143,7 @@ class AndroidSpeechRecognizerEngine(private val context: Context) : SpeechToText
                     SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No speech detected"
                     else -> "Recognition error ($error)"
                 }
+                Log.w(TAG, "SpeechRecognizer onError: $error ($errorMsg)")
                 onErrorCallback?.invoke(errorMsg)
             }
 
@@ -150,7 +168,8 @@ class AndroidSpeechRecognizerEngine(private val context: Context) : SpeechToText
         onResult: (String) -> Unit,
         onError: (String) -> Unit
     ) {
-        if (!SpeechRecognizer.isRecognitionAvailable(context)) {
+        val appContext = context.applicationContext
+        if (!SpeechRecognizer.isRecognitionAvailable(appContext)) {
             onError("Speech recognition not supported on this device.")
             return
         }
@@ -161,9 +180,7 @@ class AndroidSpeechRecognizerEngine(private val context: Context) : SpeechToText
         mainHandler.post {
             try {
                 if (speechRecognizer == null) {
-                    speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
-                        setRecognitionListener(createListener())
-                    }
+                    speechRecognizer = createSpeechRecognizerInstance()
                 }
                 muteBeepSound(true)
                 val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
@@ -171,17 +188,26 @@ class AndroidSpeechRecognizerEngine(private val context: Context) : SpeechToText
                         RecognizerIntent.EXTRA_LANGUAGE_MODEL,
                         RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
                     )
+                    putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
                     putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toString())
                     putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
                     putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
                     // Headless mode - suppresses Google Assistant dialogs
                     putExtra("android.speech.extra.DICTATION_MODE", true)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+                    }
                 }
                 speechRecognizer?.startListening(intent)
                 isListening = true
             } catch (e: Exception) {
                 isListening = false
                 muteBeepSound(false)
+                try {
+                    speechRecognizer?.destroy()
+                } catch (_: Exception) {}
+                speechRecognizer = null
+                Log.e(TAG, "Failed to start speech recognition: ${e.message}")
                 onError("Failed to start voice capture: ${e.message}")
             }
         }

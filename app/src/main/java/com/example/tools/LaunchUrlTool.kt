@@ -48,10 +48,8 @@ class LaunchUrlTool : PhoneTool {
         }
 
         return try {
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            context.startActivity(intent)
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            AppLauncherHelper.launchIntent(context, intent, "Webpage")
             ToolExecutionResult(
                 success = true,
                 message = "Opened URL: $url",

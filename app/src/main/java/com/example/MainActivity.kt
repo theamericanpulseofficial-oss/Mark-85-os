@@ -15,6 +15,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,6 +52,8 @@ class MainActivity : ComponentActivity() {
 fun JarvisApp(viewModel: JarvisViewModel) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var currentScreen by remember { mutableStateOf(JarvisScreen.MAIN) }
+    val isRunning by viewModel.isServiceRunning.collectAsState()
+    val settings by viewModel.settings.collectAsState()
 
     var hasMicPermission by remember {
         mutableStateOf(
@@ -58,6 +62,12 @@ fun JarvisApp(viewModel: JarvisViewModel) {
                 Manifest.permission.RECORD_AUDIO
             ) == PackageManager.PERMISSION_GRANTED
         )
+    }
+
+    LaunchedEffect(hasMicPermission) {
+        if (hasMicPermission && !isRunning && settings.wakeWordEnabled) {
+            viewModel.startService()
+        }
     }
 
     val micPermissionLauncher = rememberLauncherForActivityResult(

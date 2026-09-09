@@ -1447,6 +1447,129 @@ fun SettingsScreen(
                             }
                         }
                     }
+
+                    // Display Over Other Apps (SYSTEM_ALERT_WINDOW) for background app opening
+                    val canDrawOverlays = android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M ||
+                            android.provider.Settings.canDrawOverlays(context)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Display Over Other Apps (Overlay)",
+                                color = TextPrimary,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                                fontSize = 13.sp
+                            )
+                            Text(
+                                text = "Allows JARVIS to launch apps & place calls when Mark OS is in background or recents closed",
+                                color = TextSecondary,
+                                fontSize = 11.sp
+                            )
+                        }
+
+                        if (canDrawOverlays) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = "Granted",
+                                    tint = JarvisOnlineGreen,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Granted ✓", color = JarvisOnlineGreen, fontSize = 12.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                            }
+                        } else {
+                            OutlinedButton(
+                                onClick = {
+                                    try {
+                                        val intent = android.content.Intent(
+                                            android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                            android.net.Uri.parse("package:${context.packageName}")
+                                        ).apply {
+                                            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        }
+                                        context.startActivity(intent)
+                                    } catch (e: Exception) {
+                                        val intent = android.content.Intent(
+                                            android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION
+                                        ).apply {
+                                            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        }
+                                        context.startActivity(intent)
+                                    }
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = JarvisCyan)
+                            ) {
+                                Text("Allow", fontSize = 11.sp)
+                            }
+                        }
+                    }
+
+                    // Keep Alive (Battery Optimization Exemption)
+                    val powerManager = context.getSystemService(android.content.Context.POWER_SERVICE) as? android.os.PowerManager
+                    val isIgnoringBattery = android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M ||
+                            powerManager?.isIgnoringBatteryOptimizations(context.packageName) == true
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Background Execution (Unrestricted)",
+                                color = TextPrimary,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                                fontSize = 13.sp
+                            )
+                            Text(
+                                text = "Prevents Android from killing JARVIS when app is removed from recent tasks",
+                                color = TextSecondary,
+                                fontSize = 11.sp
+                            )
+                        }
+
+                        if (isIgnoringBattery) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = "Active",
+                                    tint = JarvisOnlineGreen,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Active ✓", color = JarvisOnlineGreen, fontSize = 12.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                            }
+                        } else {
+                            OutlinedButton(
+                                onClick = {
+                                    try {
+                                        val intent = android.content.Intent(
+                                            android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+                                        ).apply {
+                                            data = android.net.Uri.parse("package:${context.packageName}")
+                                            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        }
+                                        context.startActivity(intent)
+                                    } catch (e: Exception) {
+                                        val intent = android.content.Intent(
+                                            android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS
+                                        ).apply {
+                                            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        }
+                                        context.startActivity(intent)
+                                    }
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = JarvisCyan)
+                            ) {
+                                Text("Optimize", fontSize = 11.sp)
+                            }
+                        }
+                    }
                 }
             }
 
