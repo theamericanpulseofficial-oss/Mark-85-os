@@ -388,7 +388,7 @@ fun MainScreen(
                         text = when {
                             !hasMicrophonePermission -> "MICROPHONE PERMISSION REQUIRED"
                             !isRunning -> "SYSTEM READY • TAP TO ENGAGE"
-                            agentState == AgentState.LISTENING_FOR_WAKE_WORD -> "STANDBY PROTOCOL ACTIVE • SAY \"HEY JARVIS\""
+                            agentState == AgentState.LISTENING_FOR_WAKE_WORD -> "STANDBY ACTIVE • SAY \"JARVIS\", \"HEY JARVIS\" OR \"OK JARVIS\""
                             agentState == AgentState.LISTENING -> "LISTENING TO VOICE STREAM..."
                             agentState == AgentState.THINKING -> "NEURAL REASONING ACTIVE..."
                             agentState == AgentState.EXECUTING -> "EXECUTING DEVICE ACTION..."

@@ -191,7 +191,7 @@ class LocalWakeWordDetector(
                 utteranceFrames.add(FrameStats(rms, zcr, isVoice = true))
                 silenceCounter = 0
                 // Prevent runaway buffer if speech continues too long (e.g. conversation, music)
-                if (utteranceFrames.size > 70) {
+                if (utteranceFrames.size > 85) {
                     utteranceFrames.clear()
                 }
             } else {
@@ -204,16 +204,17 @@ class LocalWakeWordDetector(
                         val validSpeechFrames = utteranceFrames.filter { it.isVoice }
                         val now = System.currentTimeMillis()
 
-                        // Human utterance for "Jarvis" or "Hey Jarvis" typically lasts 440ms to 1100ms (22 to 55 frames)
-                        if (validSpeechFrames.size in 22..55 && (now - lastTriggerTime > 3000L)) {
-                            val matched = evaluateJarvisAcoustics(
+                        // Human utterance for "Jarvis", "Hey Jarvis", or "Ok Jarvis" (360ms to 1300ms, 18 to 65 frames)
+                        if (validSpeechFrames.size in 18..66 && (now - lastTriggerTime > 2500L)) {
+                            val match = evaluateWakeWordAcoustics(
                                 frames = utteranceFrames,
                                 noiseFloor = noiseFloor,
-                                minZcrThreshold = minZcrThreshold
+                                minZcrThreshold = minZcrThreshold,
+                                sensMultiplier = sensMultiplier
                             )
-                            if (matched) {
+                            if (match.matched) {
                                 lastTriggerTime = now
-                                Log.i(TAG, "Wake-Word matched 'Jarvis' / 'Hey Jarvis'! Activating assistant.")
+                                Log.i(TAG, "Wake-Word matched '${match.detectedWord}'! Activating assistant.")
                                 isListening = false
                                 utteranceFrames.clear()
                                 silenceCounter = 0
@@ -249,65 +250,103 @@ class LocalWakeWordDetector(
         }
     }
 
+    private data class WakeWordMatch(
+        val matched: Boolean,
+        val detectedWord: String = ""
+    )
+
     /**
-     * Strictly evaluates the phonetic acoustic signature of "JARVIS" or "HEY JARVIS":
-     * 1. Duration: 440ms - 1100ms
-     * 2. SNR: Peak energy must be well above the ambient room noise floor (avoid false TV/talk triggers)
-     * 3. Voiced "JAR" Core: Low ZCR (0.05 - 0.22) with strong resonant vowel energy
-     * 4. Inter-syllabic Dip: Deep energy valley between "JAR" and "VIS"
-     * 5. Terminal Fricative /s/: Sustained high ZCR (>0.35) in the tail for at least 3 consecutive frames
+     * Strictly evaluates the phonetic acoustic signature of the 3 supported wake words:
+     * 1. "JARVIS" (single word, ~360ms - 720ms)
+     * 2. "HEY JARVIS" (two words, ~550ms - 1050ms)
+     * 3. "OK JARVIS" (multi-syllable, ~650ms - 1300ms)
+     *
+     * Acoustic Invariants across all 3:
+     * - Ends in "-VIS": Sibilant alveolar fricative /s/ in the terminal tail (high ZCR)
+     * - Preceded by Inter-syllabic Dip: Amplitude drops significantly before the fricative tail
+     * - Resonant Core "JAR": High RMS with low ZCR (0.03 - 0.24)
+     * - Prefixes "Hey" or "Ok": Precede the "JAR" core in duration and frame offset
      */
-    private fun evaluateJarvisAcoustics(
+    private fun evaluateWakeWordAcoustics(
         frames: List<FrameStats>,
         noiseFloor: Float,
-        minZcrThreshold: Float
-    ): Boolean {
-        if (frames.size < 22 || frames.size > 60) return false
-
+        minZcrThreshold: Float,
+        sensMultiplier: Float
+    ): WakeWordMatch {
         val n = frames.size
+        if (n < 18 || n > 75) return WakeWordMatch(false)
+
         val peakRms = frames.maxOfOrNull { it.rms } ?: 1f
 
-        // Signal must be distinctly louder than the room's ambient noise floor
-        if (peakRms < noiseFloor * 2.8f || peakRms < 850f) {
-            return false
+        // 1. Signal-To-Noise check: Peak must stand out above ambient room noise
+        val minPeakThreshold = maxOf(noiseFloor * 2.5f, 720f * sensMultiplier)
+        if (peakRms < minPeakThreshold) {
+            return WakeWordMatch(false)
         }
 
-        val firstHalfCount = (n * 0.45f).toInt().coerceAtLeast(6)
-        val tailStartIndex = (n * 0.70f).toInt().coerceAtMost(n - 4)
-
-        val firstHalf = frames.subList(0, firstHalfCount)
+        // 2. Fricative /s/ tail check: "-vis" must be in the final 30% of frames
+        val tailStartIndex = (n * 0.70f).toInt().coerceAtMost(n - 3)
         val tailFrames = frames.subList(tailStartIndex, n)
-
-        val avgRmsFirstHalf = firstHalf.map { it.rms }.average().toFloat()
-        val avgZcrFirstHalf = firstHalf.map { it.zcr }.average().toFloat()
-
+        val targetZcr = (minZcrThreshold * 0.95f).coerceAtLeast(0.30f)
+        val highZcrTailCount = tailFrames.count { it.zcr >= targetZcr }
         val avgZcrTail = tailFrames.map { it.zcr }.average().toFloat()
-        val highZcrTailCount = tailFrames.count { it.zcr >= 0.35f }
 
-        // 1. Voiced core check: "Jar" must be resonant with low ZCR
-        val isFirstHalfVoiced = avgZcrFirstHalf in 0.04f..0.22f && avgRmsFirstHalf > 600f
+        if (highZcrTailCount < 2 && avgZcrTail < 0.26f) {
+            return WakeWordMatch(false)
+        }
 
-        // 2. Fricative /s/ tail check: "-vis" must have sustained high ZCR
-        val hasFricativeTail = highZcrTailCount >= 3 && avgZcrTail >= (avgZcrFirstHalf * 2.0f)
+        // 3. Search for the resonant voiced core "JAR" preceding the tail
+        val preTailFrames = frames.subList(0, tailStartIndex)
+        var foundVoicedCore = false
+        var coreStartIndex = -1
+        var consecutiveVoiced = 0
 
-        // 3. Syllable energy dip check: Check for an amplitude drop of at least 48% between peak and tail
+        for (i in preTailFrames.indices) {
+            val f = preTailFrames[i]
+            if (f.zcr in 0.03f..0.24f && f.rms > peakRms * 0.32f && f.rms > 480f) {
+                consecutiveVoiced++
+                if (consecutiveVoiced >= 3) {
+                    foundVoicedCore = true
+                    if (coreStartIndex == -1) coreStartIndex = i - 2
+                }
+            } else {
+                consecutiveVoiced = 0
+            }
+        }
+
+        if (!foundVoicedCore) {
+            return WakeWordMatch(false)
+        }
+
+        // 4. Syllable energy dip check: Between the voiced core and the tail
         var hasDip = false
-        val midFrames = frames.subList((n * 0.35f).toInt(), (n * 0.75f).toInt())
-        for (f in midFrames) {
-            if (f.rms < peakRms * 0.52f) {
+        val searchDipStart = (coreStartIndex.coerceAtLeast(0) + 2).coerceAtMost(tailStartIndex - 1)
+        for (i in searchDipStart until tailStartIndex) {
+            if (frames[i].rms < peakRms * 0.58f) {
                 hasDip = true
                 break
             }
         }
 
+        if (!hasDip) {
+            return WakeWordMatch(false)
+        }
+
+        // 5. Classify which of the 3 wake words was spoken
+        val detectedWord = when {
+            n in 18..36 && coreStartIndex <= 6 -> "Jarvis"
+            n in 32..66 && (coreStartIndex >= 10 || n >= 48) -> "Ok Jarvis"
+            else -> "Hey Jarvis"
+        }
+
         Log.d(
             TAG,
-            "Jarvis Acoustic Filter [frames=$n, peakRms=%.1f, avgZcr1st=%.3f, tailZcrCount=$highZcrTailCount, voiced=$isFirstHalfVoiced, fricative=$hasFricativeTail, dip=$hasDip]".format(
-                peakRms, avgZcrFirstHalf
+            "Wake-Word Acoustic Pass: '$detectedWord' [frames=$n, peakRms=%.1f, highZcrTailCount=$highZcrTailCount, coreIdx=$coreStartIndex, dip=$hasDip]".format(
+                peakRms
             )
         )
 
-        return isFirstHalfVoiced && hasFricativeTail && hasDip
+        return WakeWordMatch(matched = true, detectedWord = detectedWord)
     }
 
     override fun stop() {

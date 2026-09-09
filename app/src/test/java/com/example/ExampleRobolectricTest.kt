@@ -56,4 +56,12 @@ class ExampleRobolectricTest {
         val engine = com.example.audio.InworldKokoroTtsEngine(context, settings)
         assertNotNull(engine)
     }
+
+    @Test
+    fun `agent state label reflects 3 wake words`() {
+        val label = AgentState.LISTENING_FOR_WAKE_WORD.label
+        assertTrue(label.contains("JARVIS"))
+        assertTrue(label.contains("HEY JARVIS"))
+        assertTrue(label.contains("OK JARVIS"))
+    }
 }

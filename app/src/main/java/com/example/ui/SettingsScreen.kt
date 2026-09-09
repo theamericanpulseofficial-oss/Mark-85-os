@@ -92,6 +92,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -1196,6 +1197,125 @@ fun SettingsScreen(
                                 checkedTrackColor = JarvisCyan
                             ),
                             modifier = Modifier.testTag("continuous_listening_switch")
+                        )
+                    }
+
+                    // Wake-Word Detection & 3 Active Trigger Words Card
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color(0xFF0D161F))
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Wake-Word Detection",
+                                    color = TextPrimary,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 12.sp
+                                )
+                                Text(
+                                    text = "Hands-free voice trigger without touching phone",
+                                    color = Color(0xFF8FA3AD),
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                            Switch(
+                                checked = wakeWordEnabled,
+                                onCheckedChange = {
+                                    wakeWordEnabled = it
+                                    commitChanges()
+                                },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = JarvisCyan
+                                ),
+                                modifier = Modifier.testTag("wake_word_switch")
+                            )
+                        }
+
+                        Text(
+                            text = "SUPPORTED WAKE WORDS (3):",
+                            color = JarvisCyan,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            listOf("Jarvis", "Hey Jarvis", "Ok Jarvis").forEach { word ->
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(JarvisCyan.copy(alpha = 0.12f))
+                                        .border(1.dp, JarvisCyan.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                                        .padding(vertical = 8.dp, horizontal = 4.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = word,
+                                        color = JarvisCyan,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            }
+                        }
+
+                        Text(
+                            text = "Say any of the 3 phrases above to wake the assistant instantly.",
+                            color = Color(0xFF8FA3AD),
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "Wake Sensitivity",
+                                color = TextPrimary,
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                            Text(
+                                text = "${(wakeWordSensitivity * 100).toInt()}%",
+                                color = JarvisCyan,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                        Slider(
+                            value = wakeWordSensitivity,
+                            onValueChange = {
+                                wakeWordSensitivity = it
+                                commitChanges()
+                            },
+                            valueRange = 0.1f..1.0f,
+                            colors = SliderDefaults.colors(
+                                thumbColor = JarvisCyan,
+                                activeTrackColor = JarvisCyan,
+                                inactiveTrackColor = Color.White.copy(alpha = 0.15f)
+                            ),
+                            modifier = Modifier.testTag("wake_word_sensitivity_slider")
                         )
                     }
                 }

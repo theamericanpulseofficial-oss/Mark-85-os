@@ -141,7 +141,7 @@ class JarvisForegroundService : Service() {
     }
 
     private fun onWakeWordTriggered(directCommand: String? = null) {
-        Log.d(TAG, "Wake word 'Hey Jarvis' detected. Direct command: $directCommand")
+        Log.d(TAG, "Wake word detected (Jarvis / Hey Jarvis / Ok Jarvis). Direct command: $directCommand")
         wakeWordDetector?.stop()
 
         if (!directCommand.isNullOrBlank()) {
