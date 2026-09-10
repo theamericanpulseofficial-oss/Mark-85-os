@@ -89,12 +89,12 @@ class JarvisForegroundService : Service() {
                 onWakeWordTriggered()
             }
             ACTION_SEND_TEXT -> {
+                if (!_isRunning.value) {
+                    startForegroundWithNotification()
+                    _isRunning.value = true
+                }
                 val text = intent?.getStringExtra(EXTRA_TEXT) ?: ""
                 if (text.isNotBlank()) {
-                    if (!_isRunning.value) {
-                        startForegroundWithNotification()
-                        _isRunning.value = true
-                    }
                     handleUserTranscript(text)
                 }
             }
@@ -111,12 +111,44 @@ class JarvisForegroundService : Service() {
 
     private fun startForegroundWithNotification() {
         val notification = buildNotification(AgentState.LISTENING_FOR_WAKE_WORD.label)
+        val hasMicPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+            this,
+            android.Manifest.permission.RECORD_AUDIO
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-            )
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    val type = if (hasMicPermission) {
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                    } else {
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                    }
+                    startForeground(NOTIFICATION_ID, notification, type)
+                } else {
+                    val type = if (hasMicPermission) {
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                    } else {
+                        0
+                    }
+                    startForeground(NOTIFICATION_ID, notification, type)
+                }
+            } catch (se: SecurityException) {
+                Log.w(TAG, "Starting FGS with microphone type failed (${se.message}). Falling back to DATA_SYNC type.")
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                        startForeground(
+                            NOTIFICATION_ID,
+                            notification,
+                            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                        )
+                    } else {
+                        startForeground(NOTIFICATION_ID, notification)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Fallback startForeground error: ${e.message}", e)
+                }
+            }
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
@@ -127,6 +159,16 @@ class JarvisForegroundService : Service() {
         agent.setState(AgentState.LISTENING_FOR_WAKE_WORD)
         _agentStateFlow.value = AgentState.LISTENING_FOR_WAKE_WORD
         updateNotification(AgentState.LISTENING_FOR_WAKE_WORD.label)
+
+        val hasMicPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+            this,
+            android.Manifest.permission.RECORD_AUDIO
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+        if (!hasMicPermission) {
+            Log.w(TAG, "RECORD_AUDIO permission not granted yet. Wake-word detector paused until granted.")
+            return
+        }
 
         if (settings.wakeWordEnabled && _isRunning.value) {
             wakeWordDetector?.stop()

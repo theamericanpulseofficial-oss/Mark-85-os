@@ -64,18 +64,24 @@ fun JarvisApp(viewModel: JarvisViewModel) {
         )
     }
 
-    LaunchedEffect(hasMicPermission) {
-        if (hasMicPermission && !isRunning && settings.wakeWordEnabled) {
-            viewModel.startService()
-        }
-    }
-
     val micPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         hasMicPermission = isGranted
         if (isGranted) {
             viewModel.toggleAssistant(true)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        if (!hasMicPermission) {
+            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
+    LaunchedEffect(hasMicPermission) {
+        if (hasMicPermission && !isRunning && settings.wakeWordEnabled) {
+            viewModel.startService()
         }
     }
 

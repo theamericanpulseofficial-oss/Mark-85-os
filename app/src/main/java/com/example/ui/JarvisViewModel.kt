@@ -142,7 +142,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     fun clearAllStoredKeys() {
         val prefs = SecurePreferencesHelper(context)
         prefs.clearAllSecrets()
-        val defaultSettings = JarvisSettings()
+        val defaultSettings = JarvisSettings(nvidiaApiKey = "", inworldApiKey = "")
         _settings.value = defaultSettings
         JarvisSettings.save(context, defaultSettings)
     }

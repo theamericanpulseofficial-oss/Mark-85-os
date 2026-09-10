@@ -55,11 +55,61 @@ class InworldKokoroTtsEngine(
         .build()
 
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
+    private val audioCacheDir = File(context.cacheDir, "inworld_human_voice_cache").apply { mkdirs() }
+
+    init {
+        prewarmHumanVoiceCache()
+    }
+
+    private fun getCacheFile(text: String, voiceId: String): File {
+        val sanitized = text.trim().lowercase().replace(Regex("[^a-z0-9]"), "_").take(32)
+        val hash = (text.trim().lowercase() + voiceId).hashCode()
+        return File(audioCacheDir, "voice_${voiceId}_${sanitized}_$hash.mp3")
+    }
+
+    /**
+     * Pre-synthesizes and caches the most frequent real-human responses on disk
+     * so that when wake-word triggers or user issues commands, real human audio
+     * plays instantly with zero latency (no robotic TTS fallback).
+     */
+    fun prewarmHumanVoiceCache() {
+        if (settings.inworldApiKey.isBlank()) return
+        scope.launch(Dispatchers.IO) {
+            val commonPhrases = listOf(
+                "Yes, sir?",
+                "Ji sir, boliye?",
+                "Ok sir, abhi karta hoon.",
+                "Ji sir, bilkul.",
+                "Ek second sir, check karta hoon.",
+                "Sir, sun raha hoon. Boliye?",
+                "Goodbye sir, standing by."
+            )
+            for (phrase in commonPhrases) {
+                try {
+                    val cacheFile = getCacheFile(phrase, settings.inworldVoiceId)
+                    if (!cacheFile.exists() || cacheFile.length() < 100) {
+                        val audioBytes = fetchAudioFromInworld(phrase, settings)
+                        if (audioBytes != null && audioBytes.isNotEmpty()) {
+                            cacheFile.writeBytes(audioBytes)
+                            Log.d(TAG, "Pre-cached human voice for: '$phrase' (${audioBytes.size} bytes)")
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Prewarm cache failed for '$phrase': ${e.message}")
+                }
+            }
+        }
+    }
 
     fun updateSettings(newSettings: JarvisSettings) {
+        val keyChanged = this.settings.inworldApiKey != newSettings.inworldApiKey ||
+                this.settings.inworldVoiceId != newSettings.inworldVoiceId
         this.settings = newSettings
         fallbackTts.setRate(newSettings.ttsSpeed)
         fallbackTts.setPitch(newSettings.ttsPitch)
+        if (keyChanged) {
+            prewarmHumanVoiceCache()
+        }
     }
 
     override fun speak(text: String, onComplete: (() -> Unit)?) {
@@ -72,18 +122,34 @@ class InworldKokoroTtsEngine(
             return
         }
 
-        // For instant short acknowledgments or native TTS setting, use zero-latency native TTS
-        if (settings.ttsProvider == JarvisSettings.TTS_PROVIDER_ANDROID || settings.inworldApiKey.isBlank() || text.length <= 35) {
+        // If no Inworld API key is provided, use native fallback
+        if (settings.inworldApiKey.isBlank()) {
             fallbackTts.speak(text, queueMode, onComplete)
             return
         }
 
         stopCurrentPlayback()
 
+        // 1. Instant Cache Hit Check: If we already have real-human audio cached for this phrase, play immediately!
+        val cacheFile = getCacheFile(text, settings.inworldVoiceId)
+        if (cacheFile.exists() && cacheFile.length() > 100) {
+            try {
+                playAudioFile(cacheFile, text, onComplete)
+                return
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to play cached audio file: ${e.message}")
+            }
+        }
+
+        // 2. Synthesize via Inworld Realtime Neural TTS
         scope.launch {
             try {
                 val audioBytes = fetchAudioFromInworld(text, settings)
                 if (audioBytes != null && audioBytes.isNotEmpty()) {
+                    // Save to cache for instant future reuse
+                    try {
+                        cacheFile.writeBytes(audioBytes)
+                    } catch (_: Exception) {}
                     playAudioBytes(audioBytes, text, onComplete)
                 } else {
                     Log.w(TAG, "Inworld TTS returned empty audio. Falling back to native TTS.")
@@ -93,6 +159,44 @@ class InworldKokoroTtsEngine(
                 Log.e(TAG, "Inworld TTS synthesis failed: ${e.message}. Falling back to native TTS.", e)
                 fallbackTts.speak(text, queueMode, onComplete)
             }
+        }
+    }
+
+    private fun playAudioFile(file: File, originalText: String, onComplete: (() -> Unit)?) {
+        try {
+            requestAudioFocus()
+            val player = MediaPlayer().apply {
+                setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ASSISTANT)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
+                )
+                setDataSource(file.absolutePath)
+                setOnCompletionListener {
+                    this@InworldKokoroTtsEngine.isPlaying = false
+                    releaseAudioFocus()
+                    it.release()
+                    mediaPlayer = null
+                    onComplete?.invoke()
+                }
+                setOnErrorListener { mp, what, extra ->
+                    Log.e(TAG, "MediaPlayer error ($what, $extra) on cached audio. Falling back.")
+                    this@InworldKokoroTtsEngine.isPlaying = false
+                    releaseAudioFocus()
+                    mp.release()
+                    mediaPlayer = null
+                    fallbackTts.speak(originalText, onComplete)
+                    true
+                }
+                prepare()
+            }
+            mediaPlayer = player
+            isPlaying = true
+            player.start()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to play cached audio file: ${e.message}", e)
+            fallbackTts.speak(originalText, onComplete)
         }
     }
 

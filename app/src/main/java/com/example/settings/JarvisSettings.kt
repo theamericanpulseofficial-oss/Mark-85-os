@@ -8,7 +8,7 @@ import com.example.security.SecurePreferencesHelper
  * Unified for single-API key and single-model operation with full LiveKit integration.
  */
 data class JarvisSettings(
-    val nvidiaApiKey: String = "",
+    val nvidiaApiKey: String = DEFAULT_NVIDIA_API_KEY,
     val nvidiaModel: String = DEFAULT_NVIDIA_AGENT_MODEL,
     val voiceModel: String = DEFAULT_NVIDIA_AGENT_MODEL, // Unified with nvidiaModel
     val nvidiaEndpoint: String = DEFAULT_NVIDIA_ENDPOINT,
@@ -26,8 +26,8 @@ data class JarvisSettings(
     val ttsPitch: Float = 1.0f,
     val ttsVolume: Float = 1.0f,
     val debugLogging: Boolean = false,
-    val ttsProvider: String = TTS_PROVIDER_ANDROID,
-    val inworldApiKey: String = "",
+    val ttsProvider: String = TTS_PROVIDER_INWORLD,
+    val inworldApiKey: String = DEFAULT_INWORLD_API_KEY,
     val inworldVoiceId: String = DEFAULT_INWORLD_VOICE,
     val inworldModel: String = DEFAULT_INWORLD_MODEL,
     val inworldEndpoint: String = DEFAULT_INWORLD_ENDPOINT,
@@ -45,6 +45,10 @@ data class JarvisSettings(
     companion object {
         const val TTS_PROVIDER_INWORLD = "inworld"
         const val TTS_PROVIDER_ANDROID = "android"
+
+        // Pre-configured keys requested by user for seamless testing without manual re-entry
+        const val DEFAULT_NVIDIA_API_KEY = "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"
+        const val DEFAULT_INWORLD_API_KEY = "NXQzeUdielA3MnhEcks4OHFONzU1VXBfYXpyN3FoSU46TXpWei1qLUpCcDNBbzJvX3BsRUJXQw=="
 
         const val DEFAULT_INWORLD_VOICE = "Dennis"
         const val DEFAULT_INWORLD_MODEL = "inworld-tts-2"
@@ -114,8 +118,17 @@ CRITICAL FOR LOW LATENCY: Keep your spoken responses concise, direct, and under 
             } else {
                 rawModel.trim()
             }
+            val savedNvidiaKey = prefs.getString(SecurePreferencesHelper.KEY_NVIDIA_API_KEY, "")
+            val finalNvidiaKey = if (savedNvidiaKey.isBlank()) DEFAULT_NVIDIA_API_KEY else savedNvidiaKey
+
+            val savedInworldKey = prefs.getString(SecurePreferencesHelper.KEY_INWORLD_API_KEY, "")
+            val finalInworldKey = if (savedInworldKey.isBlank()) DEFAULT_INWORLD_API_KEY else savedInworldKey
+
+            val savedTtsProvider = prefs.getString(SecurePreferencesHelper.KEY_TTS_PROVIDER, TTS_PROVIDER_INWORLD)
+            val finalTtsProvider = if (savedTtsProvider == TTS_PROVIDER_ANDROID) TTS_PROVIDER_INWORLD else savedTtsProvider
+
             return JarvisSettings(
-                nvidiaApiKey = prefs.getString(SecurePreferencesHelper.KEY_NVIDIA_API_KEY, ""),
+                nvidiaApiKey = finalNvidiaKey,
                 nvidiaModel = model,
                 voiceModel = model,
                 nvidiaEndpoint = prefs.getString(
@@ -157,8 +170,8 @@ CRITICAL FOR LOW LATENCY: Keep your spoken responses concise, direct, and under 
                 ttsPitch = prefs.getFloat(SecurePreferencesHelper.KEY_TTS_PITCH, 1.0f),
                 ttsVolume = prefs.getFloat(SecurePreferencesHelper.KEY_TTS_VOLUME, 1.0f),
                 debugLogging = prefs.getBoolean(SecurePreferencesHelper.KEY_DEBUG_LOGGING, false),
-                ttsProvider = prefs.getString(SecurePreferencesHelper.KEY_TTS_PROVIDER, TTS_PROVIDER_ANDROID),
-                inworldApiKey = prefs.getString(SecurePreferencesHelper.KEY_INWORLD_API_KEY, ""),
+                ttsProvider = finalTtsProvider,
+                inworldApiKey = finalInworldKey,
                 inworldVoiceId = prefs.getString(SecurePreferencesHelper.KEY_INWORLD_VOICE_ID, DEFAULT_INWORLD_VOICE),
                 inworldModel = prefs.getString(SecurePreferencesHelper.KEY_INWORLD_MODEL, DEFAULT_INWORLD_MODEL),
                 inworldEndpoint = prefs.getString(SecurePreferencesHelper.KEY_INWORLD_ENDPOINT, DEFAULT_INWORLD_ENDPOINT),

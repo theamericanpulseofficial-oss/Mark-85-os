@@ -25,6 +25,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.DeleteSweep
@@ -277,6 +278,19 @@ fun SettingsScreen(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                         trailingIcon = {
                             Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (apiKey.isNotBlank()) {
+                                    IconButton(onClick = {
+                                        apiKey = ""
+                                        commitChanges()
+                                    }) {
+                                        Icon(
+                                            imageVector = Icons.Default.Clear,
+                                            contentDescription = "Clear or cut API key",
+                                            tint = Color(0xFFFF6B6B),
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
                                 IconButton(onClick = {
                                     val clipText = clipboardManager.getText()?.text
                                     if (!clipText.isNullOrBlank()) {
@@ -593,157 +607,108 @@ fun SettingsScreen(
                         )
                     )
 
+                    // Dedicated Real Human Neural Voice Indicator
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(10.dp))
-                            .background(Color(0xFF0F1A24))
-                            .padding(4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            .background(JarvisCyan.copy(alpha = 0.12f))
+                            .border(1.dp, JarvisCyan.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Option 1: Inworld Kokoro Neural
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(
-                                    if (ttsProvider == JarvisSettings.TTS_PROVIDER_INWORLD) JarvisCyan.copy(alpha = 0.22f)
-                                    else Color.Transparent
-                                )
-                                .border(
-                                    1.dp,
-                                    if (ttsProvider == JarvisSettings.TTS_PROVIDER_INWORLD) JarvisCyan.copy(alpha = 0.6f)
-                                    else Color.Transparent,
-                                    RoundedCornerShape(8.dp)
-                                )
-                                .clickable {
-                                    ttsProvider = JarvisSettings.TTS_PROVIDER_INWORLD
-                                    commitChanges()
-                                }
-                                .padding(vertical = 10.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        Icons.Default.RecordVoiceOver,
-                                        contentDescription = null,
-                                        tint = if (ttsProvider == JarvisSettings.TTS_PROVIDER_INWORLD) JarvisCyan else TextSecondary,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = "Inworld Kokoro",
-                                        color = if (ttsProvider == JarvisSettings.TTS_PROVIDER_INWORLD) JarvisCyan else TextSecondary,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 12.sp,
-                                        fontFamily = FontFamily.Monospace
-                                    )
-                                }
-                                Text(
-                                    text = "Real Neural Voice",
-                                    color = if (ttsProvider == JarvisSettings.TTS_PROVIDER_INWORLD) JarvisOnlineGreen else TextMuted,
-                                    fontSize = 10.sp,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                            }
-                        }
-
-                        // Option 2: Android System Voice
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(
-                                    if (ttsProvider == JarvisSettings.TTS_PROVIDER_ANDROID) JarvisCyan.copy(alpha = 0.22f)
-                                    else Color.Transparent
-                                )
-                                .border(
-                                    1.dp,
-                                    if (ttsProvider == JarvisSettings.TTS_PROVIDER_ANDROID) JarvisCyan.copy(alpha = 0.6f)
-                                    else Color.Transparent,
-                                    RoundedCornerShape(8.dp)
-                                )
-                                .clickable {
-                                    ttsProvider = JarvisSettings.TTS_PROVIDER_ANDROID
-                                    commitChanges()
-                                }
-                                .padding(vertical = 10.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(
-                                    text = "Android Native ⚡",
-                                    color = if (ttsProvider == JarvisSettings.TTS_PROVIDER_ANDROID) JarvisCyan else TextSecondary,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                                Text(
-                                    text = "Ultra-Fast (0s Lag)",
-                                    color = if (ttsProvider == JarvisSettings.TTS_PROVIDER_ANDROID) JarvisOnlineGreen else TextMuted,
-                                    fontSize = 10.sp,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                            }
+                        Icon(
+                            Icons.Default.RecordVoiceOver,
+                            contentDescription = null,
+                            tint = JarvisCyan,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = "REAL HUMAN NEURAL VOICE (INWORLD AI)",
+                                color = JarvisCyan,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                            Text(
+                                text = "Robotic voice removed. Instant pre-cached responses ready.",
+                                color = JarvisOnlineGreen,
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
                         }
                     }
 
                     // Inworld Kokoro configuration details
-                    if (ttsProvider == JarvisSettings.TTS_PROVIDER_INWORLD) {
-                        Text(
-                            text = "Generates authentic human emotion and cadence powered by Inworld Kokoro Realtime TTS. Delivers life-like J.A.R.V.I.S. speech.",
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                color = Color(0xFFB9CACB),
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp
-                            )
+                    Text(
+                        text = "Authentic human emotion and cadence powered by Inworld Realtime TTS. Pre-caches instant acknowledgments like 'Yes sir' and 'Ji sir'.",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            color = Color(0xFFB9CACB),
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp
                         )
+                    )
 
-                        // Inworld Kokoro API Key
-                        OutlinedTextField(
-                            value = inworldApiKey,
-                            onValueChange = {
-                                inworldApiKey = it
-                                commitChanges()
-                            },
-                            label = { Text("Inworld Kokoro API Key / Signature") },
-                            placeholder = { Text("UTQyWVpfWk... or apiKey:apiSecret") },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("inworld_api_key_input"),
-                            visualTransformation = if (showInworldApiKey) VisualTransformation.None else PasswordVisualTransformation(),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                            trailingIcon = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    // Paste button
+                    // Inworld Kokoro API Key
+                    OutlinedTextField(
+                        value = inworldApiKey,
+                        onValueChange = {
+                            inworldApiKey = it
+                            commitChanges()
+                        },
+                        label = { Text("Inworld Neural API Key / Token") },
+                        placeholder = { Text("NXQzeUdielA3MnhEcks4OHFONzU1VXBfYXpyN3FoSU46...") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("inworld_api_key_input"),
+                        visualTransformation = if (showInworldApiKey) VisualTransformation.None else PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        trailingIcon = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                // Clear / Cut button
+                                if (inworldApiKey.isNotBlank()) {
                                     IconButton(onClick = {
-                                        val clipText = clipboardManager.getText()?.text
-                                        if (!clipText.isNullOrBlank()) {
-                                            inworldApiKey = clipText
-                                            commitChanges()
-                                        }
+                                        inworldApiKey = ""
+                                        commitChanges()
                                     }) {
                                         Icon(
-                                            imageVector = Icons.Default.ContentPaste,
-                                            contentDescription = "Paste API Key",
-                                            tint = JarvisCyan,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    }
-                                    // Visibility toggle
-                                    IconButton(onClick = { showInworldApiKey = !showInworldApiKey }) {
-                                        Icon(
-                                            imageVector = if (showInworldApiKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                            contentDescription = "Toggle Inworld Key Visibility",
-                                            tint = TextSecondary,
+                                            imageVector = Icons.Default.Clear,
+                                            contentDescription = "Clear or cut Inworld key",
+                                            tint = Color(0xFFFF6B6B),
                                             modifier = Modifier.size(18.dp)
                                         )
                                     }
                                 }
-                            },
-                            colors = outlinedTextFieldColors()
-                        )
+                                // Paste button
+                                IconButton(onClick = {
+                                    val clipText = clipboardManager.getText()?.text
+                                    if (!clipText.isNullOrBlank()) {
+                                        inworldApiKey = clipText
+                                        commitChanges()
+                                    }
+                                }) {
+                                    Icon(
+                                        imageVector = Icons.Default.ContentPaste,
+                                        contentDescription = "Paste API Key",
+                                        tint = JarvisCyan,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                // Visibility toggle
+                                IconButton(onClick = { showInworldApiKey = !showInworldApiKey }) {
+                                    Icon(
+                                        imageVector = if (showInworldApiKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                        contentDescription = "Toggle Inworld Key Visibility",
+                                        tint = TextSecondary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        },
+                        colors = outlinedTextFieldColors()
+                    )
 
                         // Voice persona presets
                         Text(
@@ -1026,7 +991,6 @@ fun SettingsScreen(
                             fontSize = 10.sp,
                             fontFamily = FontFamily.Monospace
                         )
-                    }
 
                     // Sliders for rate and pitch
                     Column {
