@@ -29,6 +29,7 @@ class ToolRegistry(private val context: Context) {
         register(ScreenScrollTool())
         register(FlashlightTool())
         register(DeviceControlTool())
+        register(RealtimeInfoTool())
     }
 
     fun register(tool: PhoneTool) {

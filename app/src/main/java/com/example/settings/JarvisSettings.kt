@@ -33,11 +33,14 @@ data class JarvisSettings(
     val inworldEndpoint: String = DEFAULT_INWORLD_ENDPOINT,
     val customInstructions: String = "",
     val continuousListening: Boolean = true,
-    val filterPhoneSpeakerAudio: Boolean = true
+    val filterPhoneSpeakerAudio: Boolean = true,
+    val instantAcknowledgment: Boolean = true,
+    val liveInternetInfo: Boolean = true
 ) {
     // Convenience aliases
     val aiApiKey: String get() = nvidiaApiKey
     val aiModel: String get() = nvidiaModel
+    val continuousConversation: Boolean get() = continuousListening
 
     companion object {
         const val TTS_PROVIDER_INWORLD = "inworld"
@@ -161,7 +164,9 @@ CRITICAL FOR LOW LATENCY: Keep your spoken responses concise, direct, and under 
                 inworldEndpoint = prefs.getString(SecurePreferencesHelper.KEY_INWORLD_ENDPOINT, DEFAULT_INWORLD_ENDPOINT),
                 customInstructions = prefs.getString(SecurePreferencesHelper.KEY_CUSTOM_INSTRUCTIONS, "Hinglish me baat karo. Natural, respectful, and concise answers do."),
                 continuousListening = prefs.getBoolean(SecurePreferencesHelper.KEY_CONTINUOUS_LISTENING, true),
-                filterPhoneSpeakerAudio = prefs.getBoolean(SecurePreferencesHelper.KEY_FILTER_PHONE_SPEAKER, true)
+                filterPhoneSpeakerAudio = prefs.getBoolean(SecurePreferencesHelper.KEY_FILTER_PHONE_SPEAKER, true),
+                instantAcknowledgment = prefs.getBoolean(SecurePreferencesHelper.KEY_INSTANT_ACK, true),
+                liveInternetInfo = prefs.getBoolean(SecurePreferencesHelper.KEY_LIVE_INTERNET, true)
             )
         }
 
@@ -193,6 +198,8 @@ CRITICAL FOR LOW LATENCY: Keep your spoken responses concise, direct, and under 
             prefs.saveString(SecurePreferencesHelper.KEY_CUSTOM_INSTRUCTIONS, settings.customInstructions)
             prefs.saveBoolean(SecurePreferencesHelper.KEY_CONTINUOUS_LISTENING, settings.continuousListening)
             prefs.saveBoolean(SecurePreferencesHelper.KEY_FILTER_PHONE_SPEAKER, settings.filterPhoneSpeakerAudio)
+            prefs.saveBoolean(SecurePreferencesHelper.KEY_INSTANT_ACK, settings.instantAcknowledgment)
+            prefs.saveBoolean(SecurePreferencesHelper.KEY_LIVE_INTERNET, settings.liveInternetInfo)
         }
     }
 }

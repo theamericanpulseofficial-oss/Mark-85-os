@@ -138,6 +138,8 @@ fun SettingsScreen(
     var systemPrompt by remember(currentSettings) { mutableStateOf(currentSettings.systemPrompt) }
     var customInstructions by remember(currentSettings) { mutableStateOf(currentSettings.customInstructions) }
     var continuousListening by remember(currentSettings) { mutableStateOf(currentSettings.continuousListening) }
+    var instantAcknowledgment by remember(currentSettings) { mutableStateOf(currentSettings.instantAcknowledgment) }
+    var liveInternetInfo by remember(currentSettings) { mutableStateOf(currentSettings.liveInternetInfo) }
     var timeoutSeconds by remember(currentSettings) { mutableIntStateOf(currentSettings.timeoutSeconds) }
     var debugLogging by remember(currentSettings) { mutableStateOf(currentSettings.debugLogging) }
 
@@ -172,6 +174,8 @@ fun SettingsScreen(
             systemPrompt = systemPrompt.trim(),
             customInstructions = customInstructions.trim(),
             continuousListening = continuousListening,
+            instantAcknowledgment = instantAcknowledgment,
+            liveInternetInfo = liveInternetInfo,
             nvidiaEndpoint = endpointUrl.trim(),
             timeoutSeconds = timeoutSeconds,
             wakeWordEnabled = wakeWordEnabled,
@@ -1163,7 +1167,7 @@ fun SettingsScreen(
                         shape = RoundedCornerShape(10.dp)
                     )
 
-                    // Continuous Background Listening Switch
+                    // Continuous Follow-Up Conversation Switch
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1175,14 +1179,14 @@ fun SettingsScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Continuous Background Listening",
+                                text = "Continuous Auto-Resume Mic",
                                 color = TextPrimary,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 12.sp
                             )
                             Text(
-                                text = "Stays active in background without stopping after 5-6 seconds",
+                                text = "Jarvis bolne ke baad mic automatically fir se on hoga. Bar-bar 'Hey Jarvis' bolne ki zaroorat nahi padegi.",
                                 color = Color(0xFF8FA3AD),
                                 fontSize = 10.sp,
                                 fontFamily = FontFamily.Monospace
@@ -1199,6 +1203,84 @@ fun SettingsScreen(
                                 checkedTrackColor = JarvisCyan
                             ),
                             modifier = Modifier.testTag("continuous_listening_switch")
+                        )
+                    }
+
+                    // Zero-Latency Instant Acknowledgments Switch ("Ok sir", "Ji sir")
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color(0xFF0D161F))
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Instant Latency Masking ('Ok sir')",
+                                color = TextPrimary,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 12.sp
+                            )
+                            Text(
+                                text = "Bina kisi deri turant bolega: 'Ok sir', 'Ji sir, bilkul', 'Ek second sir', fir command poori karke reply karega.",
+                                color = Color(0xFF8FA3AD),
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                        Switch(
+                            checked = instantAcknowledgment,
+                            onCheckedChange = {
+                                instantAcknowledgment = it
+                                commitChanges()
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = JarvisCyan
+                            ),
+                            modifier = Modifier.testTag("instant_ack_switch")
+                        )
+                    }
+
+                    // Live Internet & Realtime Weather Switch
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color(0xFF0D161F))
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Live Internet & Weather Information",
+                                color = TextPrimary,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 12.sp
+                            )
+                            Text(
+                                text = "Real-time live taapmaan, weather report, aur taaza internet data voice me batayega.",
+                                color = Color(0xFF8FA3AD),
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                        Switch(
+                            checked = liveInternetInfo,
+                            onCheckedChange = {
+                                liveInternetInfo = it
+                                commitChanges()
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = JarvisCyan
+                            ),
+                            modifier = Modifier.testTag("live_internet_switch")
                         )
                     }
 

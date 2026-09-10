@@ -63,14 +63,18 @@ class InworldKokoroTtsEngine(
     }
 
     override fun speak(text: String, onComplete: (() -> Unit)?) {
+        speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, onComplete)
+    }
+
+    override fun speak(text: String, queueMode: Int, onComplete: (() -> Unit)?) {
         if (text.isBlank()) {
             onComplete?.invoke()
             return
         }
 
-        // Check if user selected Android Native TTS or Inworld API key is missing
-        if (settings.ttsProvider == JarvisSettings.TTS_PROVIDER_ANDROID || settings.inworldApiKey.isBlank()) {
-            fallbackTts.speak(text, onComplete)
+        // For instant short acknowledgments or native TTS setting, use zero-latency native TTS
+        if (settings.ttsProvider == JarvisSettings.TTS_PROVIDER_ANDROID || settings.inworldApiKey.isBlank() || text.length <= 35) {
+            fallbackTts.speak(text, queueMode, onComplete)
             return
         }
 
@@ -83,11 +87,11 @@ class InworldKokoroTtsEngine(
                     playAudioBytes(audioBytes, text, onComplete)
                 } else {
                     Log.w(TAG, "Inworld TTS returned empty audio. Falling back to native TTS.")
-                    fallbackTts.speak(text, onComplete)
+                    fallbackTts.speak(text, queueMode, onComplete)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Inworld TTS synthesis failed: ${e.message}. Falling back to native TTS.", e)
-                fallbackTts.speak(text, onComplete)
+                fallbackTts.speak(text, queueMode, onComplete)
             }
         }
     }

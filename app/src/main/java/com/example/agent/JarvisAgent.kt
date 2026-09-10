@@ -65,10 +65,11 @@ class JarvisAgent(
         }
 
         val basePrompt = settings.systemPrompt.ifBlank { SYSTEM_PROMPT }
+        val liveDateTime = java.text.SimpleDateFormat("EEEE, MMMM d, yyyy, hh:mm a", java.util.Locale.getDefault()).format(java.util.Date())
         val effectivePrompt = if (settings.customInstructions.isNotBlank()) {
-            "$basePrompt\n\nUSER CUSTOM INSTRUCTIONS & PERSONA (OBEY STRICTLY):\n${settings.customInstructions}"
+            "$basePrompt\n\nCURRENT LIVE TIME & DATE:\n- Real-Time Timestamp: $liveDateTime\n- Always accurately state the current real-time when asked about the time or date.\n\nUSER CUSTOM INSTRUCTIONS & PERSONA (OBEY STRICTLY):\n${settings.customInstructions}"
         } else {
-            basePrompt
+            "$basePrompt\n\nCURRENT LIVE TIME & DATE:\n- Real-Time Timestamp: $liveDateTime\n- Always accurately state the current real-time when asked about the time or date."
         }
 
         if (conversationHistory.isEmpty()) {
@@ -344,22 +345,38 @@ class JarvisAgent(
      */
     private fun checkTimeOrDateQuery(text: String): String? {
         val lower = text.lowercase().trim()
+        val isHindi = lower.contains("kya") || lower.contains("batao") || lower.contains("hai") ||
+                lower.contains("aaj") || lower.contains("samay") || lower.contains("tarikh") ||
+                lower.contains("kitne") || lower.contains("baje") || lower.contains("din")
+
         val isTimeQuery = lower == "time" || lower == "what time" || lower == "what time is it" ||
-                lower.contains("time kya") || lower.contains("kitne baje") || lower.contains("samay kya") ||
-                lower.contains("current time") || lower == "time batao"
+                lower.contains("time kya") || lower.contains("kya time") || lower.contains("kitne baje") ||
+                lower.contains("samay kya") || lower.contains("kya samay") || lower.contains("current time") ||
+                lower.contains("time batao") || lower.contains("kitna baja") || lower.contains("tell me the time") ||
+                lower.contains("ghadi me kya") || lower == "time please"
         if (isTimeQuery) {
             val sdf = java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault())
             val formatted = sdf.format(java.util.Date())
-            return "The current time is $formatted, sir."
+            return if (isHindi) {
+                "Sir, abhi samay $formatted hua hai."
+            } else {
+                "The current time is $formatted, sir."
+            }
         }
 
         val isDateQuery = lower == "date" || lower == "what is the date" || lower == "what date is it" ||
-                lower.contains("date kya") || lower.contains("konsi date") || lower.contains("tarikh kya") ||
-                lower.contains("today's date") || lower.contains("aaj kya tarikh") || lower.contains("aaj konsa din")
+                lower.contains("date kya") || lower.contains("kya date") || lower.contains("konsi date") ||
+                lower.contains("tarikh kya") || lower.contains("kya tarikh") || lower.contains("today's date") ||
+                lower.contains("aaj kya tarikh") || lower.contains("aaj konsa din") || lower.contains("aaj ka din") ||
+                lower.contains("date batao") || lower.contains("what day is it") || lower.contains("aaj ki date")
         if (isDateQuery) {
             val sdf = java.text.SimpleDateFormat("EEEE, MMMM d, yyyy", java.util.Locale.getDefault())
             val formatted = sdf.format(java.util.Date())
-            return "Today is $formatted, sir."
+            return if (isHindi) {
+                "Sir, aaj $formatted hai."
+            } else {
+                "Today is $formatted, sir."
+            }
         }
 
         return null
@@ -589,6 +606,20 @@ class JarvisAgent(
             }
         }
 
+        // 8. Real-Time Live Weather Fast-Path
+        val isWeatherRequest = lower.contains("mausam kaisa") || lower.contains("aaj ka mausam") ||
+                lower.contains("weather kaisa") || lower.contains("weather kya") ||
+                lower.contains("temperature kitna") || lower.contains("taapmaan kitna") ||
+                (lower.contains("weather") && (lower.contains("today") || lower.contains("now") || lower.contains("batao")))
+        if (isWeatherRequest) {
+            return com.example.ai.ToolCall(
+                id = "call_fast_weather",
+                type = "function",
+                functionName = "live_internet_info",
+                argumentsJson = "{\"query\":\"$text\",\"category\":\"weather\"}"
+            )
+        }
+
         return null
     }
 
@@ -613,6 +644,7 @@ You have access to Android tools to control the user's device:
 - open_settings: Open Wi-Fi, Bluetooth, Display, Battery, Sound, Apps, or General settings
 - search_contact: Search contacts address book by name
 - web_search: Search web or YouTube. CRITICAL: Analyze the query to extract the core subject keywords rather than searching the user's raw conversational phrase.
+- live_internet_info: Fetches live real-time internet data including current weather, temperature, news, score, people, and live facts. Use this to verbally answer live internet queries.
 - send_message: Send or compose a WhatsApp message or SMS to a contact name or number
 - scroll_screen: Scroll the current open screen up/down/left/right or navigate back/home
 
@@ -620,7 +652,8 @@ Guidelines:
 1. When asked to perform an action on the phone, invoke the corresponding tool immediately.
 2. For calls ("call Papa", "call Rahul"), call them immediately with phone_call. Do not stop to repeat the number.
 3. For search requests, extract and analyze the true keyword topic before invoking web_search.
-4. Keep spoken responses concise for voice output without Markdown bullet lists or symbols.
+4. When asked for live information, current weather, or internet facts, invoke live_internet_info and speak the result directly.
+5. Keep spoken responses concise for voice output without Markdown bullet lists or symbols.
 """
     }
 }

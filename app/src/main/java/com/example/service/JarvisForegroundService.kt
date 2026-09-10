@@ -13,10 +13,12 @@ import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.os.SystemClock
+import android.speech.tts.TextToSpeech
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.MainActivity
 import com.example.R
+import com.example.agent.AckPhraseGenerator
 import com.example.agent.AgentState
 import com.example.agent.JarvisAgent
 import com.example.audio.AndroidSpeechRecognizerEngine
@@ -121,21 +123,26 @@ class JarvisForegroundService : Service() {
     }
 
     private fun startStandbyWakeWord() {
+        sttEngine.stopListening()
         agent.setState(AgentState.LISTENING_FOR_WAKE_WORD)
         _agentStateFlow.value = AgentState.LISTENING_FOR_WAKE_WORD
         updateNotification(AgentState.LISTENING_FOR_WAKE_WORD.label)
 
-        if (settings.wakeWordEnabled) {
+        if (settings.wakeWordEnabled && _isRunning.value) {
             wakeWordDetector?.stop()
-            wakeWordDetector = LocalWakeWordDetector(
-                context = this,
-                scope = serviceScope,
-                picovoiceAccessKey = settings.picovoiceAccessKey,
-                sensitivity = settings.wakeWordSensitivity,
-                filterPhoneSpeakerAudio = settings.filterPhoneSpeakerAudio
-            ).apply {
-                start { directCommand ->
-                    onWakeWordTriggered(directCommand)
+            serviceScope.launch {
+                kotlinx.coroutines.delay(150)
+                if (!_isRunning.value) return@launch
+                wakeWordDetector = LocalWakeWordDetector(
+                    context = this@JarvisForegroundService,
+                    scope = serviceScope,
+                    picovoiceAccessKey = settings.picovoiceAccessKey,
+                    sensitivity = settings.wakeWordSensitivity,
+                    filterPhoneSpeakerAudio = settings.filterPhoneSpeakerAudio
+                ).apply {
+                    start { directCommand ->
+                        onWakeWordTriggered(directCommand)
+                    }
                 }
             }
         }
@@ -154,9 +161,28 @@ class JarvisForegroundService : Service() {
 
         agent.setState(AgentState.LISTENING)
         _agentStateFlow.value = AgentState.LISTENING
+        updateNotification("Awake. Listening...")
+
+        // Spoken acknowledgment prompt so user knows Jarvis woke up and is waiting for their voice command
+        val wakePrompt = if (settings.customInstructions.contains("Hindi", ignoreCase = true) ||
+            settings.customInstructions.contains("Hinglish", ignoreCase = true)
+        ) {
+            "Ji sir, boliye?"
+        } else {
+            "Yes, sir?"
+        }
+
+        ttsEngine.speak(wakePrompt) {
+            captureUserSpeechWithWatchdog(retryAttempt = 0)
+        }
+    }
+
+    private fun captureUserSpeechWithWatchdog(retryAttempt: Int) {
+        if (!_isRunning.value) return
+        agent.setState(AgentState.LISTENING)
+        _agentStateFlow.value = AgentState.LISTENING
         updateNotification(AgentState.LISTENING.label)
 
-        // Capture voice request cleanly after letting AudioRecord release mic hardware
         serviceScope.launch {
             kotlinx.coroutines.delay(200)
             sttEngine.startListening(
@@ -164,10 +190,25 @@ class JarvisForegroundService : Service() {
                     handleUserTranscript(transcript)
                 },
                 onError = { errorMsg ->
-                    Log.w(TAG, "Speech capture ended or timed out: $errorMsg")
-                    serviceScope.launch {
-                        kotlinx.coroutines.delay(350)
-                        startStandbyWakeWord()
+                    Log.w(TAG, "Speech capture error/timeout: $errorMsg, attempt: $retryAttempt")
+                    if (retryAttempt == 0 && (errorMsg.contains("No speech", ignoreCase = true) || errorMsg.contains("time", ignoreCase = true))) {
+                        // User paused: prompt once gently instead of abruptly closing
+                        val reprompt = if (settings.customInstructions.contains("Hindi", ignoreCase = true) ||
+                            settings.customInstructions.contains("Hinglish", ignoreCase = true)
+                        ) {
+                            "Sir, sun raha hoon. Boliye?"
+                        } else {
+                            "I'm listening, sir."
+                        }
+                        ttsEngine.speak(reprompt) {
+                            captureUserSpeechWithWatchdog(retryAttempt = 1)
+                        }
+                    } else {
+                        // Gracefully return to wake-word standby mode, staying alive in background
+                        serviceScope.launch {
+                            kotlinx.coroutines.delay(350)
+                            startStandbyWakeWord()
+                        }
                     }
                 }
             )
@@ -175,16 +216,47 @@ class JarvisForegroundService : Service() {
     }
 
     private fun handleUserTranscript(transcript: String) {
+        val trimmed = transcript.trim()
+        if (trimmed.isBlank()) return
+
         serviceScope.launch {
             // Always reload the freshest settings (including new API keys and models)
             settings = JarvisSettings.load(this@JarvisForegroundService)
             (ttsEngine as? InworldKokoroTtsEngine)?.updateSettings(settings)
-            _liveTranscript.value = transcript
+            _liveTranscript.value = trimmed
+
+            // 1. Check if user wants to close / exit conversation
+            if (AckPhraseGenerator.isExitOrClosingCommand(trimmed)) {
+                val farewell = AckPhraseGenerator.getFarewellResponse(trimmed)
+                _liveResponse.value = farewell
+                agent.setState(AgentState.SPEAKING)
+                _agentStateFlow.value = AgentState.SPEAKING
+                updateNotification(AgentState.SPEAKING.label)
+                ttsEngine.speak(farewell) {
+                    serviceScope.launch {
+                        kotlinx.coroutines.delay(250)
+                        startStandbyWakeWord()
+                    }
+                }
+                return@launch
+            }
+
+            // 2. Immediate Verbal Acknowledgment ("Filler Phrase") to slash perceived latency to ~0ms
+            val instantAck = if (settings.instantAcknowledgment) {
+                AckPhraseGenerator.getInstantAck(trimmed)
+            } else null
+
+            if (instantAck != null) {
+                Log.d(TAG, "Speaking instant verbal acknowledgment: '$instantAck'")
+                ttsEngine.speak(instantAck, TextToSpeech.QUEUE_FLUSH)
+            }
+
             agent.setState(AgentState.THINKING)
             _agentStateFlow.value = AgentState.THINKING
             updateNotification(AgentState.THINKING.label)
 
-            val spokenResponse = agent.processUserSpeech(transcript, settings)
+            // Concurrently process the user speech through agent (fast intents, local time, or AI model)
+            val spokenResponse = agent.processUserSpeech(trimmed, settings)
             _liveResponse.value = spokenResponse
 
             _agentStateFlow.value = agent.state.value
@@ -195,25 +267,64 @@ class JarvisForegroundService : Service() {
             updateNotification(AgentState.SPEAKING.label)
 
             // Safety watchdog: If TTS hangs or completes without calling onComplete,
-            // ensure the assistant returns to standby wake-word listening reliably.
+            // ensure the assistant proceeds reliably to follow-up or standby.
             val watchdogJob = serviceScope.launch {
-                val waitTimeMs = (spokenResponse.length * 85L + 4000L).coerceIn(4000L, 14000L)
+                val waitTimeMs = (spokenResponse.length * 85L + 5000L).coerceIn(4000L, 16000L)
                 kotlinx.coroutines.delay(waitTimeMs)
                 if (_agentStateFlow.value == AgentState.SPEAKING) {
-                    Log.d(TAG, "TTS watchdog reached timeout. Safely returning to wake-word standby.")
-                    startStandbyWakeWord()
+                    Log.d(TAG, "TTS watchdog reached timeout. Finishing speech turn.")
+                    onSpeechTurnCompleted()
                 }
             }
 
-            ttsEngine.speak(spokenResponse) {
+            // If an instant acknowledgment was played, queue the main response so it plays seamlessly right after it
+            val queueMode = if (instantAck != null) TextToSpeech.QUEUE_ADD else TextToSpeech.QUEUE_FLUSH
+
+            ttsEngine.speak(spokenResponse, queueMode) {
                 watchdogJob.cancel()
-                // Speech finished -> return to listening or standby
+                onSpeechTurnCompleted()
+            }
+        }
+    }
+
+    private fun onSpeechTurnCompleted() {
+        serviceScope.launch {
+            // Brief delay to ensure phone speaker acoustic tail clears before opening mic
+            kotlinx.coroutines.delay(350)
+            if (settings.continuousListening && _isRunning.value) {
+                startFollowUpListening()
+            } else {
+                startStandbyWakeWord()
+            }
+        }
+    }
+
+    private fun startFollowUpListening() {
+        if (!_isRunning.value) return
+        Log.d(TAG, "Entering continuous conversation follow-up listening mode...")
+        wakeWordDetector?.stop()
+        agent.setState(AgentState.LISTENING)
+        _agentStateFlow.value = AgentState.LISTENING
+        updateNotification("Listening... (Speak without wake word)")
+
+        sttEngine.startListening(
+            onResult = { followUpTranscript ->
+                Log.d(TAG, "Follow-up speech captured: $followUpTranscript")
+                if (followUpTranscript.isNotBlank()) {
+                    handleUserTranscript(followUpTranscript)
+                } else {
+                    startStandbyWakeWord()
+                }
+            },
+            onError = { errorMsg ->
+                // User was silent or did not speak further -> smoothly close conversation back to standby wake word
+                Log.d(TAG, "Follow-up silence/timeout ($errorMsg). Returning to standby wake word.")
                 serviceScope.launch {
-                    kotlinx.coroutines.delay(350)
+                    kotlinx.coroutines.delay(200)
                     startStandbyWakeWord()
                 }
             }
-        }
+        )
     }
 
     private fun stopAssistant() {

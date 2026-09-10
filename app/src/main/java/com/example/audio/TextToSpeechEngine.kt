@@ -16,6 +16,7 @@ import java.util.Locale
  */
 interface TextToSpeechEngine {
     fun speak(text: String, onComplete: (() -> Unit)? = null)
+    fun speak(text: String, queueMode: Int, onComplete: (() -> Unit)? = null)
     fun stop()
     fun shutdown()
     fun setRate(rate: Float)
@@ -89,6 +90,10 @@ class AndroidTextToSpeechEngine(
     }
 
     override fun speak(text: String, onComplete: (() -> Unit)?) {
+        speak(text, TextToSpeech.QUEUE_FLUSH, onComplete)
+    }
+
+    override fun speak(text: String, queueMode: Int, onComplete: (() -> Unit)?) {
         if (text.isBlank()) {
             onComplete?.invoke()
             return
@@ -109,7 +114,7 @@ class AndroidTextToSpeechEngine(
         val params = Bundle()
         params.putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
 
-        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
+        tts?.speak(text, queueMode, params, utteranceId)
     }
 
     private fun requestAudioFocus() {

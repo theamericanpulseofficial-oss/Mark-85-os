@@ -198,52 +198,57 @@ class LocalWakeWordDetector(
         var record: AudioRecord? = null
         var attempts = 0
 
-        // Retry loop for transient hardware locks (e.g. after phone call or app launch)
-        while (scope.isActive && isListening && attempts < 5) {
+        // Robust retry loop with backoff: ensures mic hardware is acquired even after SpeechRecognizer / calls release
+        while (scope.isActive && isListening && record == null) {
             try {
                 // Use VOICE_RECOGNITION source for hardware AEC and noise suppression
-                record = AudioRecord(
+                val candidate = AudioRecord(
                     MediaRecorder.AudioSource.VOICE_RECOGNITION,
                     sampleRate,
                     channelConfig,
                     audioFormat,
                     bufferSize
                 )
-                if (record.state == AudioRecord.STATE_INITIALIZED) {
-                    attachAudioEffects(record.audioSessionId)
+                if (candidate.state == AudioRecord.STATE_INITIALIZED) {
+                    record = candidate
+                    attachAudioEffects(candidate.audioSessionId)
                     break
                 } else {
-                    record.release()
-                    record = null
+                    candidate.release()
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Attempt $attempts initializing AudioRecord: ${e.message}")
+                Log.w(TAG, "Attempt $attempts initializing VOICE_RECOGNITION: ${e.message}")
             }
-            attempts++
-            delay(200)
-        }
 
-        // Fallback to MIC if VOICE_RECOGNITION is restricted by OEM
-        if (record == null && isListening) {
-            try {
-                record = AudioRecord(
-                    MediaRecorder.AudioSource.MIC,
-                    sampleRate,
-                    channelConfig,
-                    audioFormat,
-                    bufferSize
-                )
-                if (record.state == AudioRecord.STATE_INITIALIZED) {
-                    attachAudioEffects(record.audioSessionId)
+            // Fallback to standard MIC source if VOICE_RECOGNITION is held or OEM restricted
+            if (attempts >= 3) {
+                try {
+                    val candidateMic = AudioRecord(
+                        MediaRecorder.AudioSource.MIC,
+                        sampleRate,
+                        channelConfig,
+                        audioFormat,
+                        bufferSize
+                    )
+                    if (candidateMic.state == AudioRecord.STATE_INITIALIZED) {
+                        record = candidateMic
+                        attachAudioEffects(candidateMic.audioSessionId)
+                        break
+                    } else {
+                        candidateMic.release()
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Attempt $attempts initializing MIC fallback: ${e.message}")
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Fallback to MIC failed: ${e.message}")
             }
+
+            attempts++
+            val delayMs = if (attempts > 15) 800L else 250L
+            delay(delayMs)
         }
 
         if (record == null || record.state != AudioRecord.STATE_INITIALIZED) {
-            Log.e(TAG, "AudioRecord could not be initialized.")
-            isListening = false
+            Log.w(TAG, "AudioRecord could not be initialized after retries.")
             return
         }
 
