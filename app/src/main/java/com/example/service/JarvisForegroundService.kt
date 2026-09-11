@@ -214,8 +214,22 @@ class JarvisForegroundService : Service() {
             "Yes, sir?"
         }
 
+        var startedCapture = false
+        val promptTimeoutJob = serviceScope.launch {
+            kotlinx.coroutines.delay(3500)
+            if (!startedCapture && _agentStateFlow.value == AgentState.LISTENING) {
+                Log.d(TAG, "Wake prompt timeout watchdog reached; opening microphone for user command...")
+                startedCapture = true
+                captureUserSpeechWithWatchdog(retryAttempt = 0)
+            }
+        }
+
         ttsEngine.speak(wakePrompt) {
-            captureUserSpeechWithWatchdog(retryAttempt = 0)
+            promptTimeoutJob.cancel()
+            if (!startedCapture) {
+                startedCapture = true
+                captureUserSpeechWithWatchdog(retryAttempt = 0)
+            }
         }
     }
 

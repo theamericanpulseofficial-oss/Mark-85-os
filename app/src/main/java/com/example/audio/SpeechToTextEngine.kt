@@ -49,36 +49,8 @@ class AndroidSpeechRecognizerEngine(private val context: Context) : SpeechToText
         initRecognizer()
     }
 
-    private var originalMusicVol: Int = -1
-    private var originalNotifVol: Int = -1
-    private var originalSystemVol: Int = -1
-
     private fun muteBeepSound(mute: Boolean) {
-        try {
-            audioManager?.let { am ->
-                if (mute) {
-                    if (originalMusicVol == -1) {
-                        originalMusicVol = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-                        originalNotifVol = am.getStreamVolume(AudioManager.STREAM_NOTIFICATION)
-                        originalSystemVol = am.getStreamVolume(AudioManager.STREAM_SYSTEM)
-                    }
-                    am.setStreamVolume(AudioManager.STREAM_MUSIC, 0, 0)
-                    am.setStreamVolume(AudioManager.STREAM_NOTIFICATION, 0, 0)
-                    am.setStreamVolume(AudioManager.STREAM_SYSTEM, 0, 0)
-                } else {
-                    if (originalMusicVol != -1) {
-                        am.setStreamVolume(AudioManager.STREAM_MUSIC, originalMusicVol, 0)
-                        am.setStreamVolume(AudioManager.STREAM_NOTIFICATION, originalNotifVol, 0)
-                        am.setStreamVolume(AudioManager.STREAM_SYSTEM, originalSystemVol, 0)
-                        originalMusicVol = -1
-                        originalNotifVol = -1
-                        originalSystemVol = -1
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Could not adjust system stream volume for silent recognition: ${e.message}")
-        }
+        // Kept as safe no-op to prevent changing device volume or triggering Android DND SecurityExceptions
     }
 
     private fun initRecognizer() {

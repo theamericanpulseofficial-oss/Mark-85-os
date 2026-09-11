@@ -197,6 +197,105 @@ class JarvisAccessibilityService : AccessibilityService() {
         }
     }
 
+    /**
+     * Opens the Recents / Overview screen and clicks "Clear all" / "Close all" / "Dismiss all".
+     */
+    fun clearAllRecentApps(onResult: ((Boolean) -> Unit)? = null) {
+        performGlobal("recents")
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default).launch {
+            var clicked = false
+            // Wait for recents screen animation
+            kotlinx.coroutines.delay(450L)
+            for (attempt in 1..8) {
+                try {
+                    val root = rootInActiveWindow
+                    if (root != null) {
+                        clicked = findAndClickClearAllNode(root)
+                        root.recycle()
+                        if (clicked) {
+                            Log.i(TAG, "Successfully clicked Clear all button on attempt $attempt")
+                            break
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error scanning recents for Clear all: ${e.message}")
+                }
+
+                // On Pixel & AOSP launchers, "Clear all" is at the leftmost card of the recents carousel
+                if (attempt == 2 || attempt == 4) {
+                    performScroll("right")
+                }
+                kotlinx.coroutines.delay(300L)
+            }
+
+            // Fallback coordinate tap if launcher nodes are obfuscated
+            if (!clicked) {
+                val metrics: DisplayMetrics = resources.displayMetrics
+                val width = metrics.widthPixels.toFloat()
+                val height = metrics.heightPixels.toFloat()
+                // Many OEM launchers place Clear all at bottom center (x=50%, y=88%) or bottom right
+                val tapPath = Path().apply {
+                    moveTo(width * 0.50f, height * 0.88f)
+                    lineTo(width * 0.50f, height * 0.88f)
+                }
+                val tapGesture = GestureDescription.Builder()
+                    .addStroke(GestureDescription.StrokeDescription(tapPath, 0, 50))
+                    .build()
+                dispatchGesture(tapGesture, null, null)
+                clicked = true
+            }
+
+            withContext(kotlinx.coroutines.Dispatchers.Main) {
+                onResult?.invoke(clicked)
+            }
+        }
+    }
+
+    /**
+     * Dismisses the currently open application or swipes it away from the recents screen.
+     */
+    fun dismissAppFromRecents(appName: String = "", onResult: ((Boolean) -> Unit)? = null) {
+        performGlobal("recents")
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default).launch {
+            kotlinx.coroutines.delay(500L)
+            // On standard Android, swiping up on the active recents card dismisses/closes that app
+            performScroll("up")
+            kotlinx.coroutines.delay(350L)
+            performGlobal("home")
+            withContext(kotlinx.coroutines.Dispatchers.Main) {
+                onResult?.invoke(true)
+            }
+        }
+    }
+
+    private fun findAndClickClearAllNode(node: AccessibilityNodeInfo): Boolean {
+        val text = node.text?.toString()?.lowercase() ?: ""
+        val desc = node.contentDescription?.toString()?.lowercase() ?: ""
+        val viewId = node.viewIdResourceName?.lowercase() ?: ""
+
+        val isClearAllTarget = text.contains("clear all") || text.contains("close all") ||
+                text.contains("dismiss all") || text.contains("clear") || text.contains("sab band") ||
+                text.contains("सभी बंद") || text.contains("हटाएं") || text.contains("क्लियर") ||
+                desc.contains("clear all") || desc.contains("close all") || desc.contains("dismiss all") ||
+                viewId.contains("clear_all") || viewId.contains("close_all") || viewId.contains("button_clear_all") ||
+                viewId.contains("clearall") || viewId.contains("recents_clear")
+
+        if (isClearAllTarget) {
+            if (performClickOnNodeOrParent(node)) return true
+        }
+
+        val childCount = node.childCount
+        for (i in 0 until childCount) {
+            val child = node.getChild(i) ?: continue
+            if (findAndClickClearAllNode(child)) {
+                child.recycle()
+                return true
+            }
+            child.recycle()
+        }
+        return false
+    }
+
     private fun findAndClickSendButtonNode(node: AccessibilityNodeInfo): Boolean {
         // 1. Check known view ID resource names for WhatsApp, Google Messages, Samsung Messages
         val viewId = node.viewIdResourceName?.lowercase() ?: ""

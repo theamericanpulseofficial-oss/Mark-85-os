@@ -116,6 +116,31 @@ class JarvisAgent(
             return timeOrDateResponse
         }
 
+        // COMPOUND MULTI-STEP COMMAND FAST-PATH:
+        // Handles chained multi-intent voice requests (e.g. "open chrome and open recents then clear all apps")
+        val compoundCommands = parseCompoundCommands(cleaned).ifEmpty { parseCompoundCommands(trimmed) }
+        if (compoundCommands.size > 1) {
+            val matchedCalls = compoundCommands.mapNotNull { subCmd -> matchFastIntent(subCmd) }
+            if (matchedCalls.size == compoundCommands.size) {
+                _state.value = AgentState.EXECUTING
+                val responses = mutableListOf<String>()
+                for ((index, toolCall) in matchedCalls.withIndex()) {
+                    if (index > 0) {
+                        kotlinx.coroutines.delay(650L)
+                    }
+                    val result = toolRegistry.executeTool(toolCall.functionName, toolCall.argumentsJson)
+                    val speech = result.speechResponse ?: result.message
+                    responses.add(speech)
+                }
+                _state.value = AgentState.SPEAKING
+                val combinedResponse = synthesizeCompoundResponse(responses)
+                _lastResponse.value = combinedResponse
+                conversationHistory.add(ChatMessage.user(trimmed))
+                conversationHistory.add(ChatMessage.assistant(combinedResponse))
+                return combinedResponse
+            }
+        }
+
         // ZERO-LATENCY FAST-PATH: Instant local execution for common voice commands (torch, call, apps, volume, media)
         val fastToolCall = matchFastIntent(cleaned) ?: matchFastIntent(trimmed)
         if (fastToolCall != null) {
@@ -190,50 +215,62 @@ class JarvisAgent(
 
         if (toolCalls.isNotEmpty()) {
             _state.value = AgentState.EXECUTING
-            val toolCall = toolCalls.first()
-            val tool = toolRegistry.getTool(toolCall.functionName)
+            val speechResponses = mutableListOf<String>()
 
-            if (tool != null && tool.requiresConfirmation && isDeviceLocked) {
-                _state.value = AgentState.SPEAKING
-                val speech = "Sir, please unlock your device before executing this action."
-                _lastResponse.value = speech
-                return speech
+            for ((idx, toolCall) in toolCalls.withIndex()) {
+                val tool = toolRegistry.getTool(toolCall.functionName)
+
+                if (tool != null && tool.requiresConfirmation && isDeviceLocked) {
+                    _state.value = AgentState.SPEAKING
+                    val speech = "Sir, please unlock your device before executing this action."
+                    _lastResponse.value = speech
+                    return speech
+                }
+
+                if (idx > 0) {
+                    kotlinx.coroutines.delay(650L)
+                }
+
+                val executionResult = toolRegistry.executeTool(
+                    name = toolCall.functionName,
+                    argumentsJson = toolCall.argumentsJson
+                )
+
+                if (executionResult.requiresUserConfirmation) {
+                    pendingConfirmationTool = Pair(toolCall.functionName, executionResult.pendingActionPayload ?: toolCall.argumentsJson)
+                    _state.value = AgentState.SPEAKING
+                    val speech = executionResult.speechResponse ?: "Would you like me to proceed, sir?"
+                    _lastResponse.value = speech
+                    return speech
+                }
+
+                conversationHistory.add(
+                    ChatMessage.tool(
+                        toolCallId = toolCall.id,
+                        name = toolCall.functionName,
+                        content = executionResult.message
+                    )
+                )
+
+                val speech = executionResult.speechResponse ?: executionResult.message
+                speechResponses.add(speech)
             }
 
-            val executionResult = toolRegistry.executeTool(
-                name = toolCall.functionName,
-                argumentsJson = toolCall.argumentsJson
-            )
-
-            if (executionResult.requiresUserConfirmation) {
-                pendingConfirmationTool = Pair(toolCall.functionName, executionResult.pendingActionPayload ?: toolCall.argumentsJson)
-                _state.value = AgentState.SPEAKING
-                val speech = executionResult.speechResponse ?: "Would you like me to proceed, sir?"
-                _lastResponse.value = speech
-                return speech
-            }
-
-            // Record assistant tool call and tool result in conversation history
             conversationHistory.add(
                 ChatMessage.assistant(
                     content = response.content ?: "",
                     toolCalls = toolCalls
                 )
             )
-            conversationHistory.add(
-                ChatMessage.tool(
-                    toolCallId = toolCall.id,
-                    name = toolCall.functionName,
-                    content = executionResult.message
-                )
-            )
 
             _state.value = AgentState.SPEAKING
-            val speech = executionResult.speechResponse
-                ?: response.content
-                ?: "Action completed, sir."
-            _lastResponse.value = speech
-            return speech
+            val combinedSpeech = if (speechResponses.size > 1) {
+                synthesizeCompoundResponse(speechResponses)
+            } else {
+                speechResponses.firstOrNull() ?: response.content ?: "Action completed, sir."
+            }
+            _lastResponse.value = combinedSpeech
+            return combinedSpeech
         } else {
             val textReply = response.content ?: "At your service, sir."
 
@@ -430,7 +467,79 @@ class JarvisAgent(
             )
         }
 
-        // 2. Direct App Launch (e.g. WhatsApp, YouTube, Camera, Spotify, Settings)
+        // 2. Overview / Recents & Task Management Fast-Paths (Hindi + English)
+        if (lower == "recents" || lower == "open recents" || lower == "recent apps" ||
+            lower == "recent apps kholo" || lower.contains("recents kholo") ||
+            lower.contains("recents open") || lower.contains("recent screen") ||
+            lower.contains("recent app kholo") || lower == "overview"
+        ) {
+            return com.example.ai.ToolCall(
+                id = "call_fast_recents",
+                type = "function",
+                functionName = "app_management",
+                argumentsJson = "{\"action\":\"recents\"}"
+            )
+        }
+
+        if (lower == "clear all" || lower == "clear all apps" || lower == "close all" ||
+            lower == "close all apps" || lower == "dismiss all" ||
+            lower.contains("clear all apps") || lower.contains("close all apps") ||
+            lower.contains("clear all") || lower.contains("close all") ||
+            lower.contains("sab apps band karo") || lower.contains("sab band karo") ||
+            lower.contains("recents clear") || lower.contains("clear recents") ||
+            lower.contains("sab hatao") || lower.contains("sab clear karo")
+        ) {
+            return com.example.ai.ToolCall(
+                id = "call_fast_clear_all",
+                type = "function",
+                functionName = "app_management",
+                argumentsJson = "{\"action\":\"clear_all\"}"
+            )
+        }
+
+        // Close / Clear a specific app (e.g. "clear chrome", "close chrome", "chrome band karo")
+        val closeMatch = Regex("""^(?:clear|close|band\s+karo)\s+([a-zA-Z0-9\s]+)$|^([a-zA-Z0-9\s]+)\s+(?:band\s+karo|clear\s+karo|hatao)$""").find(lower)
+        if (closeMatch != null) {
+            val app = (closeMatch.groupValues[1].ifBlank { closeMatch.groupValues[2] }).trim()
+            if (app.isNotBlank() && app != "all" && app != "all apps" && app != "recents" && app != "overview") {
+                return com.example.ai.ToolCall(
+                    id = "call_fast_close_app",
+                    type = "function",
+                    functionName = "app_management",
+                    argumentsJson = "{\"action\":\"close_app\",\"appName\":\"$app\"}"
+                )
+            }
+        }
+
+        // Delete / Uninstall an app (e.g. "delete chrome", "delete koi app", "uninstall whatsapp", "whatsapp delete karo")
+        val deleteMatch = Regex("""^(?:delete|uninstall)\s+(?:app\s+)?([a-zA-Z0-9\s]+)$|^([a-zA-Z0-9\s]+)\s+(?:delete\s+karo|uninstall\s+karo|delete\s+kar\s+do)$""").find(lower)
+        if (deleteMatch != null) {
+            val app = (deleteMatch.groupValues[1].ifBlank { deleteMatch.groupValues[2] }).trim()
+            if (app.isNotBlank()) {
+                return com.example.ai.ToolCall(
+                    id = "call_fast_uninstall_app",
+                    type = "function",
+                    functionName = "app_management",
+                    argumentsJson = "{\"action\":\"uninstall_app\",\"appName\":\"$app\"}"
+                )
+            }
+        }
+
+        // App storage / cache settings (e.g. "clear data of chrome", "chrome ka data clear karo")
+        val clearDataMatch = Regex("""(?:clear\s+data\s+of|data\s+clear\s+karo)\s+([a-zA-Z0-9\s]+)|([a-zA-Z0-9\s]+)\s+ka\s+data\s+clear""").find(lower)
+        if (clearDataMatch != null) {
+            val app = (clearDataMatch.groupValues[1].ifBlank { clearDataMatch.groupValues[2] }).trim()
+            if (app.isNotBlank()) {
+                return com.example.ai.ToolCall(
+                    id = "call_fast_app_settings",
+                    type = "function",
+                    functionName = "app_management",
+                    argumentsJson = "{\"action\":\"app_settings\",\"appName\":\"$app\"}"
+                )
+            }
+        }
+
+        // 3. Direct App Launch (e.g. WhatsApp, YouTube, Camera, Chrome, Spotify, Settings, or any app)
         val appMap = mapOf(
             "whatsapp" to "WhatsApp",
             "youtube" to "YouTube",
@@ -455,6 +564,21 @@ class JarvisAgent(
                     type = "function",
                     functionName = "open_app",
                     argumentsJson = "{\"appName\":\"$appName\"}"
+                )
+            }
+        }
+
+        // Dynamic launch for any other app (e.g. "open telegram", "open netflix", "snapchat kholo")
+        val genericOpenMatch = Regex("""^(?:open|launch)\s+([a-zA-Z0-9\s]+)$|^([a-zA-Z0-9\s]+)\s+(?:kholo|khol|chalao|open\s+karo)$""").find(lower)
+        if (genericOpenMatch != null) {
+            val target = (genericOpenMatch.groupValues[1].ifBlank { genericOpenMatch.groupValues[2] }).trim()
+            if (target.isNotBlank() && target != "recents" && target != "overview" && target != "wifi" && target != "torch") {
+                val resolvedName = appMap[target] ?: target
+                return com.example.ai.ToolCall(
+                    id = "call_fast_open_generic_app",
+                    type = "function",
+                    functionName = "open_app",
+                    argumentsJson = "{\"appName\":\"$resolvedName\"}"
                 )
             }
         }
@@ -669,6 +793,44 @@ class JarvisAgent(
         return null
     }
 
+    /**
+     * Splits compound / chained voice commands joined by 'and', 'then', 'aur', 'fir', 'ke baad'
+     * into discrete atomic sub-command strings.
+     */
+    private fun parseCompoundCommands(transcript: String): List<String> {
+        val lower = cleanSpeechCommand(transcript).lowercase().trim()
+        if (lower.isBlank()) return emptyList()
+
+        // Delimiters: "and then", "then", "and", "aur fir", "fir", "aur", "ke baad", "uske baad"
+        val delimiterRegex = Regex("""\s+(?:and\s+then|then|and|aur\s+fir|aur|fir|ke\s+baad|uske\s+baad)\s+""")
+        if (!delimiterRegex.containsMatchIn(lower)) {
+            return emptyList()
+        }
+
+        val parts = lower.split(delimiterRegex).map { it.trim() }.filter { it.isNotBlank() }
+        return if (parts.size >= 2) parts else emptyList()
+    }
+
+    /**
+     * Synthesizes multiple sequential tool responses into a single natural spoken phrase.
+     */
+    private fun synthesizeCompoundResponse(responses: List<String>): String {
+        if (responses.isEmpty()) return "Actions completed, sir."
+        if (responses.size == 1) return responses.first()
+
+        // Clean redundant greetings and endings from intermediate steps
+        val cleanedSteps = responses.map { r ->
+            r.replace(Regex("""^(?:Sir,\s*|Opening\s+|Launching\s+)""", RegexOption.IGNORE_CASE), "")
+                .replace(Regex(""",?\s*sir\.?$""", RegexOption.IGNORE_CASE), "")
+                .trim()
+                .replaceFirstChar { it.lowercase() }
+        }
+
+        val allExceptLast = cleanedSteps.dropLast(1).joinToString(", ")
+        val last = cleanedSteps.last()
+        return "Executed: $allExceptLast, and $last, sir."
+    }
+
     companion object {
         private const val TAG = "JarvisAgent"
 
@@ -680,6 +842,7 @@ Keep your verbal spoken answers brief, natural, elegant, confident, and actionab
 CRITICAL IDENTITY RULE: You are JARVIS / MARK 85 OS. NEVER refer to yourself as a robot or say "As a robot" or "I am an AI robot" or speak mechanically when you cannot perform an action. If an action fails, is restricted, or requires permission, speak calmly and naturally in your own persona: "Sir, I am unable to perform that right now" or "Sir, please grant accessibility permission to proceed."
 
 You have access to Android tools to control the user's device:
+- app_management: Manages tasks and overview: opens recents overview ('recents'), clears all recent apps ('clear_all'), closes an app ('close_app'), uninstalls/deletes an app ('uninstall_app'), or opens app storage settings ('app_settings')
 - take_screenshot: Takes a full screenshot of the device screen immediately
 - control_wifi: Turns Wi-Fi on or off, toggles Wi-Fi state (action: 'on', 'off', 'toggle', 'status')
 - control_flashlight: Turns device flashlight / torch on or off immediately (action: 'on', 'off', 'toggle')
@@ -700,10 +863,11 @@ You have access to Android tools to control the user's device:
 
 Guidelines:
 1. When asked to perform an action on the phone, invoke the corresponding tool immediately.
-2. For calls ("call Papa", "call Rahul"), call them immediately with phone_call. Do not stop to repeat the number.
-3. For search requests, extract and analyze the true keyword topic before invoking web_search.
-4. When asked for live information, current weather, or internet facts, invoke live_internet_info and speak the result directly.
-5. Keep spoken responses concise for voice output without Markdown bullet lists or symbols.
+2. If user provides a multi-step command (e.g. "open chrome and open recents then clear all apps"), invoke all appropriate tools sequentially in the exact requested order.
+3. For calls ("call Papa", "call Rahul"), call them immediately with phone_call. Do not stop to repeat the number.
+4. For search requests, extract and analyze the true keyword topic before invoking web_search.
+5. When asked for live information, current weather, or internet facts, invoke live_internet_info and speak the result directly.
+6. Keep spoken responses concise for voice output without Markdown bullet lists or symbols.
 """
     }
 }
