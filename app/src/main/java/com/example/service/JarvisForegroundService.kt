@@ -248,20 +248,13 @@ class JarvisForegroundService : Service() {
                     handleUserTranscript(transcript)
                 },
                 onError = { errorMsg ->
-                    Log.w(TAG, "Speech capture error/timeout: $errorMsg, attempt: $retryAttempt")
-                    if (retryAttempt == 0 && (errorMsg.contains("No speech", ignoreCase = true) || errorMsg.contains("time", ignoreCase = true))) {
-                        // User paused: prompt once gently instead of abruptly closing
-                        val repromptList = listOf("Yes, sir?", "Bilkul, sir.", "At your service, sir.")
-                        val reprompt = repromptList.random()
-                        ttsEngine.speak(reprompt) {
-                            captureUserSpeechWithWatchdog(retryAttempt = 1)
-                        }
-                    } else {
-                        // Gracefully return to wake-word standby mode, staying alive in background
-                        serviceScope.launch {
-                            kotlinx.coroutines.delay(350)
-                            startStandbyWakeWord()
-                        }
+                    Log.d(TAG, "No user speech captured after reply ($errorMsg). Turning mic off and returning to standby wake-word.")
+                    agent.setState(AgentState.LISTENING_FOR_WAKE_WORD)
+                    _agentStateFlow.value = AgentState.LISTENING_FOR_WAKE_WORD
+                    updateNotification(AgentState.LISTENING_FOR_WAKE_WORD.label)
+                    serviceScope.launch {
+                        kotlinx.coroutines.delay(300)
+                        startStandbyWakeWord()
                     }
                 }
             )
