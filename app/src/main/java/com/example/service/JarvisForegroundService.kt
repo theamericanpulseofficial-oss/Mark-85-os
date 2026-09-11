@@ -205,14 +205,16 @@ class JarvisForegroundService : Service() {
         _agentStateFlow.value = AgentState.LISTENING
         updateNotification("Awake. Listening...")
 
-        // Spoken acknowledgment prompt so user knows Jarvis woke up and is waiting for their voice command
-        val wakePrompt = if (settings.customInstructions.contains("Hindi", ignoreCase = true) ||
-            settings.customInstructions.contains("Hinglish", ignoreCase = true)
-        ) {
-            "Ji sir, boliye?"
-        } else {
-            "Yes, sir?"
-        }
+        // Strict 3 zero-latency wake-up acknowledgment replies requested by user:
+        // 1. "Yes, sir?"
+        // 2. "Bilkul, sir."
+        // 3. "At your service, sir."
+        val wakeReplies = listOf(
+            "Yes, sir?",
+            "Bilkul, sir.",
+            "At your service, sir."
+        )
+        val wakePrompt = wakeReplies.random()
 
         var startedCapture = false
         val promptTimeoutJob = serviceScope.launch {
@@ -249,13 +251,8 @@ class JarvisForegroundService : Service() {
                     Log.w(TAG, "Speech capture error/timeout: $errorMsg, attempt: $retryAttempt")
                     if (retryAttempt == 0 && (errorMsg.contains("No speech", ignoreCase = true) || errorMsg.contains("time", ignoreCase = true))) {
                         // User paused: prompt once gently instead of abruptly closing
-                        val reprompt = if (settings.customInstructions.contains("Hindi", ignoreCase = true) ||
-                            settings.customInstructions.contains("Hinglish", ignoreCase = true)
-                        ) {
-                            "Sir, sun raha hoon. Boliye?"
-                        } else {
-                            "I'm listening, sir."
-                        }
+                        val repromptList = listOf("Yes, sir?", "Bilkul, sir.", "At your service, sir.")
+                        val reprompt = repromptList.random()
                         ttsEngine.speak(reprompt) {
                             captureUserSpeechWithWatchdog(retryAttempt = 1)
                         }

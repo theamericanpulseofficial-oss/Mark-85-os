@@ -40,15 +40,14 @@ object AckPhraseGenerator {
     )
 
     private val conversationAcksHinglish = listOf(
-        "Ji sir.",
-        "Haanji sir, kahiye.",
-        "Sun raha hoon sir.",
-        "Ji sir, boliye."
+        "Yes, sir?",
+        "Bilkul, sir.",
+        "At your service, sir."
     )
 
     private val conversationAcksEnglish = listOf(
-        "Yes, sir.",
-        "Listening, sir.",
+        "Yes, sir?",
+        "Bilkul, sir.",
         "At your service, sir."
     )
 

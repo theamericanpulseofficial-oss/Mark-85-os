@@ -77,7 +77,8 @@ class InworldKokoroTtsEngine(
         scope.launch(Dispatchers.IO) {
             val commonPhrases = listOf(
                 "Yes, sir?",
-                "Ji sir, boliye?",
+                "Bilkul, sir.",
+                "At your service, sir.",
                 "Ok sir, abhi karta hoon.",
                 "Ji sir, bilkul.",
                 "Ek second sir, check karta hoon.",
