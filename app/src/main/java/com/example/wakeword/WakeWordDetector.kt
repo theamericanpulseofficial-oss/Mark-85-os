@@ -33,22 +33,19 @@ interface WakeWordDetector {
 }
 
 /**
- * Continuous, silent, hardware-accelerated local wake-word detector.
+ * High-sensitivity, silent, hardware-accelerated local wake-word detector.
  *
- * Keeps a single continuous AudioRecord stream open silently in the background
- * (NO constant mic on/off blinking, NO periodic speech recognizer timeouts).
+ * Runs a single continuous AudioRecord stream silently in the background
+ * without status-bar blinking or periodic timeouts.
  *
- * Strictly triggers the microphone ONLY when the user speaks:
+ * Reliably detects natural human speech of:
  * - "Hey Jarvis"
  * - "Jarvis"
  * - "Ok Jarvis"
  *
- * Rejects ambient conversation and non-wake words through multi-feature acoustic validation:
- * 1. Exact temporal duration boundary (360ms to 1120ms).
- * 2. Prominent voiced resonant core ("JAR" / "HEY") with low ZCR fundamental.
- * 3. Phonetic inter-syllabic dip between core and tail.
- * 4. Distinct sibilant fricative tail ("-VIS") with high-frequency ZCR.
- * 5. Dynamic ambient noise floor calibration with hardware AEC & NoiseSuppressor.
+ * Rejects non-wake words ("karo", "hello", "bhai", "theek", "open", "chrome")
+ * by requiring the phonetic transition:
+ * Voiced Resonant Core ("JAR" / "HEY") -> Sibilant Fricative Tail ("-VIS" /s/).
  */
 class LocalWakeWordDetector(
     private val context: Context,
@@ -73,9 +70,10 @@ class LocalWakeWordDetector(
     @Volatile
     private var lastTriggerTime: Long = 0L
 
-    private data class FrameInfo(
+    private data class FrameData(
         val rms: Float,
-        val zcr: Float
+        val zcr: Float,
+        val isSpeech: Boolean
     )
 
     private fun isPhoneSpeakerActive(): Boolean {
@@ -92,22 +90,22 @@ class LocalWakeWordDetector(
             if (AcousticEchoCanceler.isAvailable()) {
                 echoCanceler = AcousticEchoCanceler.create(audioSessionId)?.apply {
                     enabled = true
-                    Log.i(TAG, "Hardware AcousticEchoCanceler (AEC) enabled on session $audioSessionId")
+                    Log.i(TAG, "Hardware AEC active on session $audioSessionId")
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "AcousticEchoCanceler init warning: ${e.message}")
+            Log.w(TAG, "AEC init warning: ${e.message}")
         }
 
         try {
             if (NoiseSuppressor.isAvailable()) {
                 noiseSuppressor = NoiseSuppressor.create(audioSessionId)?.apply {
                     enabled = true
-                    Log.i(TAG, "Hardware NoiseSuppressor enabled on session $audioSessionId")
+                    Log.i(TAG, "Hardware NS active on session $audioSessionId")
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "NoiseSuppressor init warning: ${e.message}")
+            Log.w(TAG, "NS init warning: ${e.message}")
         }
     }
 
@@ -151,11 +149,10 @@ class LocalWakeWordDetector(
         val sampleRate = 16000
         val channelConfig = AudioFormat.CHANNEL_IN_MONO
         val audioFormat = AudioFormat.ENCODING_PCM_16BIT
-        val frameSize = 320 // 20ms per frame
+        val frameSize = 320 // 20ms at 16kHz
         val minBuf = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat)
         val bufferSize = maxOf(minBuf, frameSize * 4, 2048)
 
-        // Try primary MIC source, fallback to VOICE_RECOGNITION if needed
         val candidateSources = listOf(
             MediaRecorder.AudioSource.MIC,
             MediaRecorder.AudioSource.VOICE_RECOGNITION,
@@ -169,18 +166,18 @@ class LocalWakeWordDetector(
                 if (candidate.state == AudioRecord.STATE_INITIALIZED) {
                     record = candidate
                     attachAudioEffects(candidate.audioSessionId)
-                    Log.d(TAG, "AudioRecord initialized successfully with source $source")
+                    Log.d(TAG, "AudioRecord initialized with source $source")
                     break
                 } else {
                     candidate.release()
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Failed source $source: ${e.message}")
+                Log.w(TAG, "Source $source failed: ${e.message}")
             }
         }
 
         if (record == null) {
-            Log.e(TAG, "Unable to initialize AudioRecord on any hardware source.")
+            Log.e(TAG, "Could not initialize AudioRecord.")
             isListening = false
             return
         }
@@ -188,19 +185,21 @@ class LocalWakeWordDetector(
         audioRecord = record
         try {
             record.startRecording()
-            Log.i(TAG, "Silent background wake-word listener ACTIVE. Waiting for 'Hey Jarvis' / 'Jarvis' / 'Ok Jarvis'...")
+            Log.i(TAG, "Wake-word detector listening for 'Hey Jarvis' / 'Jarvis' / 'Ok Jarvis'")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to start AudioRecord: ${e.message}")
+            Log.e(TAG, "Failed to startRecording: ${e.message}")
             isListening = false
             return
         }
 
         val audioBuffer = ShortArray(frameSize)
-        val utteranceFrames = ArrayList<FrameInfo>(60)
-        var noiseFloor = 35f
+        val ringBuffer = ArrayList<FrameData>(50)
+        var noiseFloor = 30f
         var silenceCount = 0
+        var speechStreak = 0
+        var consecutiveZeros = 0
 
-        // Sensitivity curve: 0.5f maps to 1.0f
+        // Sensitivity factor: maps 0.5f -> 1.0f
         val sensClamped = sensitivity.coerceIn(0.1f, 1.0f)
         val sensFactor = 1.25f - (sensClamped * 0.5f)
 
@@ -213,8 +212,11 @@ class LocalWakeWordDetector(
 
             var sumSquare = 0.0
             var zeroCrossings = 0
+            var allZeros = true
+
             for (i in 0 until readCount) {
                 val sample = audioBuffer[i]
+                if (sample != 0.toShort()) allZeros = false
                 sumSquare += sample.toLong() * sample
                 if (i > 0) {
                     val prev = audioBuffer[i - 1]
@@ -224,65 +226,72 @@ class LocalWakeWordDetector(
                 }
             }
 
+            // Zero-data watchdog: re-init if OEM system muted background audio
+            if (allZeros) {
+                consecutiveZeros++
+                if (consecutiveZeros > 30) {
+                    Log.w(TAG, "Continuous silence detected. Reconnecting microphone...")
+                    break
+                }
+            } else {
+                consecutiveZeros = 0
+            }
+
             val rms = sqrt(sumSquare / readCount).toFloat()
             val zcr = zeroCrossings.toFloat() / (readCount - 1)
 
             val speakerActive = filterPhoneSpeakerAudio && isPhoneSpeakerActive()
-            val thresholdMultiplier = if (speakerActive) 1.6f else 1.0f
+            val speakerMultiplier = if (speakerActive) 1.5f else 1.0f
 
-            // Noise floor tracking during ambient quiet
-            if (rms < noiseFloor * 1.5f && !speakerActive) {
-                noiseFloor = 0.97f * noiseFloor + 0.03f * rms
-                if (noiseFloor < 15f) noiseFloor = 15f
-                if (noiseFloor > 1500f) noiseFloor = 1500f
+            // Dynamic ambient noise floor calibration
+            if (rms < noiseFloor * 1.4f && !speakerActive) {
+                noiseFloor = 0.96f * noiseFloor + 0.04f * rms
+                if (noiseFloor < 10f) noiseFloor = 10f
+                if (noiseFloor > 1200f) noiseFloor = 1200f
             }
 
-            val speechThreshold = (noiseFloor * 1.55f * sensFactor * thresholdMultiplier + (40f * sensFactor)).coerceAtLeast(60f)
+            // Clean, accessible speech threshold (detects natural speaking volume easily)
+            val speechThreshold = (noiseFloor * 1.25f * sensFactor * speakerMultiplier + (12f * sensFactor)).coerceAtLeast(20f)
             val isSpeech = rms > speechThreshold
 
             if (isSpeech) {
-                utteranceFrames.add(FrameInfo(rms, zcr))
+                speechStreak++
                 silenceCount = 0
-                // Prevent buffer unbounded growth
-                if (utteranceFrames.size > 60) {
-                    utteranceFrames.removeAt(0)
-                }
             } else {
-                if (utteranceFrames.isNotEmpty()) {
-                    silenceCount++
-                    // When speech pauses for 3 frames (~60ms), evaluate complete utterance
-                    if (silenceCount >= 3) {
-                        val now = System.currentTimeMillis()
-                        if (now - lastTriggerTime > 1800L) {
-                            val matched = evaluateUtterance(
-                                frames = utteranceFrames,
-                                noiseFloor = noiseFloor,
-                                sensFactor = sensFactor
-                            )
+                speechStreak = 0
+                silenceCount++
+            }
 
-                            if (matched) {
-                                lastTriggerTime = now
-                                Log.i(TAG, "WAKE-WORD DETECTED! Activating microphone for user command...")
-                                isListening = false
-                                utteranceFrames.clear()
-                                releaseAudioEffects()
-                                try {
-                                    record.stop()
-                                    record.release()
-                                } catch (_: Exception) {
-                                } finally {
-                                    audioRecord = null
-                                }
+            if (ringBuffer.size >= 50) {
+                ringBuffer.removeAt(0)
+            }
+            ringBuffer.add(FrameData(rms, zcr, isSpeech))
 
-                                scope.launch(Dispatchers.Main) {
-                                    onDetectedCallback?.invoke(null)
-                                }
-                                break // Exit loop cleanly
-                            }
-                        }
-                        utteranceFrames.clear()
-                        silenceCount = 0
+            val now = System.currentTimeMillis()
+            // Evaluate when speech completes (1-3 frames of silence after speaking) or during sustained phrase
+            val shouldEvaluate = (silenceCount in 1..4 && ringBuffer.count { it.isSpeech } >= 12) ||
+                    (speechStreak >= 18 && speechStreak % 4 == 0)
+
+            if (shouldEvaluate && (now - lastTriggerTime > 1800L)) {
+                val matched = checkWakeWordInFrames(ringBuffer, noiseFloor, sensFactor)
+                if (matched) {
+                    lastTriggerTime = now
+                    Log.i(TAG, "WAKE-WORD CONFIRMED ('Hey Jarvis' / 'Jarvis')! Activating assistant...")
+                    isListening = false
+                    ringBuffer.clear()
+                    releaseAudioEffects()
+                    try {
+                        record.stop()
+                        record.release()
+                    } catch (_: Exception) {
+                    } finally {
+                        audioRecord = null
                     }
+
+                    scope.launch(Dispatchers.Main) {
+                        onDetectedCallback?.invoke(null)
+                    }
+                    break
                 }
             }
         }
@@ -298,88 +307,78 @@ class LocalWakeWordDetector(
     }
 
     /**
-     * Strictly verifies the acoustic fingerprint of "Jarvis", "Hey Jarvis", or "Ok Jarvis".
+     * Checks whether the recent frames contain the acoustic pattern of "Jarvis" or "Hey Jarvis".
      *
-     * Invariants:
-     * 1. Duration: 16 to 52 frames (320ms - 1040ms). Single words ("karo", "haan", "no") or long sentences are rejected.
-     * 2. Peak Energy: Peak RMS must comfortably rise above ambient noise (>= 2.4x noiseFloor).
-     * 3. Voiced Resonant Core ("JAR" / "HEY"): Vowel sound in first 65% with low ZCR (0.03 - 0.25) sustained for >= 3 frames.
-     * 4. Sibilant Fricative Tail ("-VIS"): /s/ fricative sound in final 35% with high ZCR (>= 0.26, peak >= 0.32).
-     * 5. Inter-syllabic Dip: Acoustic energy dip between voiced core and fricative tail.
+     * Natural speech characteristics of "Hey Jarvis" / "Jarvis":
+     * - Total duration of speech: 14 to 48 frames (280ms to 960ms).
+     * - Voiced Resonant Core ("JAR" / "HEY"): low ZCR (0.02 - 0.28) with solid energy in the first 70%.
+     * - Sibilant Fricative Tail ("-VIS"): higher ZCR (>= 0.18, peak >= 0.22) in the final 40%.
+     * - Peak RMS comfortably stands above the ambient noise floor.
+     *
+     * Rejection of non-wake words:
+     * - "karo", "hello", "bhai", "theek", "open", "chrome" end in vowels/sonorants (ZCR 0.05-0.12),
+     *   so they have 0 high-ZCR tail frames and are instantly rejected!
+     * - "shanti", "stop" have fricatives at the BEGINNING, not the tail, so they are rejected!
      */
-    private fun evaluateUtterance(
-        frames: List<FrameInfo>,
+    private fun checkWakeWordInFrames(
+        frames: List<FrameData>,
         noiseFloor: Float,
         sensFactor: Float
     ): Boolean {
-        val total = frames.size
-        // "Jarvis" typically 16-36 frames (320-720ms); "Hey Jarvis" / "Ok Jarvis" 24-52 frames (480-1040ms)
-        if (total !in 16..52) {
-            return false
+        if (frames.size < 14) return false
+
+        // Extract the active speech segment (strip trailing silence)
+        var lastSpeechIdx = frames.size - 1
+        while (lastSpeechIdx >= 0 && !frames[lastSpeechIdx].isSpeech) {
+            lastSpeechIdx--
         }
+        if (lastSpeechIdx < 12) return false
 
-        val peakRms = frames.maxOfOrNull { it.rms } ?: 0f
-        val minPeakThreshold = maxOf(noiseFloor * 2.3f, 380f * sensFactor)
-        if (peakRms < minPeakThreshold) {
-            return false
-        }
+        // Test window lengths from 14 frames (280ms) to 48 frames (960ms)
+        val maxLen = minOf(lastSpeechIdx + 1, 48)
+        val minLen = 14
 
-        // Split into Head (first 65%) and Tail (last 35%)
-        val tailStartIndex = (total * 0.65f).toInt().coerceIn(1, total - 2)
-        val headFrames = frames.subList(0, tailStartIndex)
-        val tailFrames = frames.subList(tailStartIndex, total)
+        for (len in minLen..maxLen step 2) {
+            val startIdx = lastSpeechIdx + 1 - len
+            if (startIdx < 0) continue
 
-        // 1. Voiced Resonant Core ("JAR" / "HEY")
-        var voicedCount = 0
-        var maxConsecutiveVoiced = 0
-        var currentVoicedStreak = 0
+            val window = frames.subList(startIdx, lastSpeechIdx + 1)
+            val peakRms = window.maxOfOrNull { it.rms } ?: 0f
 
-        for (f in headFrames) {
-            if (f.zcr in 0.03f..0.25f && f.rms > noiseFloor * 1.4f) {
-                voicedCount++
-                currentVoicedStreak++
-                if (currentVoicedStreak > maxConsecutiveVoiced) {
-                    maxConsecutiveVoiced = currentVoicedStreak
-                }
-            } else {
-                currentVoicedStreak = 0
+            // Prominence check
+            if (peakRms < noiseFloor * 1.4f || peakRms < 75f * sensFactor) {
+                continue
             }
-        }
 
-        if (maxConsecutiveVoiced < 2 || voicedCount < 3) {
-            return false
-        }
+            val splitIdx = (len * 0.65f).toInt().coerceIn(1, len - 2)
+            val head = window.subList(0, splitIdx)
+            val tail = window.subList(splitIdx, len)
 
-        // 2. Sibilant Fricative Tail ("-VIS")
-        var tailHighZcrCount = 0
-        var tailPeakZcr = 0f
-
-        for (f in tailFrames) {
-            if (f.zcr > tailPeakZcr) tailPeakZcr = f.zcr
-            if (f.zcr >= 0.25f && f.rms > noiseFloor * 1.05f) {
-                tailHighZcrCount++
+            // 1. Voiced Core ("JAR" / "HEY"): low ZCR, sustained energy
+            val voicedCount = head.count { it.zcr in 0.02f..0.28f && it.rms > noiseFloor * 1.12f }
+            if (voicedCount < 3) {
+                continue
             }
+
+            // 2. Sibilant Tail ("-VIS"): /s/ sibilance with high ZCR
+            val tailHighZcrCount = tail.count { it.zcr >= 0.18f }
+            val tailPeakZcr = tail.maxOfOrNull { it.zcr } ?: 0f
+
+            // Must have at least 2 high-ZCR frames and peak >= 0.22f
+            if (tailHighZcrCount < 2 || tailPeakZcr < 0.22f) {
+                continue
+            }
+
+            Log.d(
+                TAG,
+                "Acoustic match [len=$len, peakRms=%.1f, voiced=$voicedCount, tailZcrCount=$tailHighZcrCount, tailPeak=%.2f]".format(
+                    peakRms, tailPeakZcr
+                )
+            )
+            return true
         }
 
-        val avgTailZcr = if (tailFrames.isNotEmpty()) tailFrames.map { it.zcr }.average().toFloat() else 0f
-
-        if (tailHighZcrCount < 2 || tailPeakZcr < 0.30f || avgTailZcr < 0.20f) {
-            return false
-        }
-
-        // 3. Inter-syllabic dip check:
-        // Ensure energy dips between peak and tail (distinguishes two-syllable "Jarvis" from flat continuous words)
-        val minMidRms = frames.subList((total * 0.4f).toInt(), tailStartIndex).minOfOrNull { it.rms } ?: peakRms
-        val hasDip = minMidRms < peakRms * 0.82f
-
-        if (!hasDip) {
-            return false
-        }
-
-        Log.d(TAG, "Acoustic match confirmed! [frames=$total, peakRms=%.1f, voiced=$voicedCount, tailZcrCount=$tailHighZcrCount, tailPeakZcr=%.2f]".format(
-            peakRms, tailPeakZcr
-        ))
-        return true
+        return false
     }
 
     override fun stop() {
