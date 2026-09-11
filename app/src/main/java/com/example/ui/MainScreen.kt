@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -140,7 +141,8 @@ fun MainScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(64.dp)
+                        .statusBarsPadding()
+                        .height(56.dp)
                         .padding(horizontal = 16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
@@ -379,30 +381,6 @@ fun MainScreen(
                                 }
                             }
                         }
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Tactical Subtitle Status
-                    Text(
-                        text = when {
-                            !hasMicrophonePermission -> "MICROPHONE PERMISSION REQUIRED"
-                            !isRunning -> "SYSTEM READY • TAP TO ENGAGE"
-                            agentState == AgentState.LISTENING_FOR_WAKE_WORD -> "STANDBY ACTIVE • SAY \"JARVIS\", \"HEY JARVIS\" OR \"OK JARVIS\""
-                            agentState == AgentState.LISTENING -> "LISTENING TO VOICE STREAM..."
-                            agentState == AgentState.THINKING -> "NEURAL REASONING ACTIVE..."
-                            agentState == AgentState.EXECUTING -> "EXECUTING DEVICE ACTION..."
-                            agentState == AgentState.SPEAKING -> "TRANSMITTING VOCAL RESPONSE..."
-                            else -> "SYSTEM ACTIVE"
-                        },
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            color = Color(0xFFB9CACB).copy(alpha = 0.65f),
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 10.sp,
-                            letterSpacing = 1.5.sp,
-                            fontWeight = FontWeight.Medium
-                        ),
-                        textAlign = TextAlign.Center
                     )
                 }
             }

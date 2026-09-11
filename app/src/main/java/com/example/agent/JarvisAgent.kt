@@ -620,6 +620,52 @@ class JarvisAgent(
             )
         }
 
+        // 9. Screenshot Fast-Path (Hindi + English)
+        val isScreenshotRequest = lower.contains("screenshot") || lower.contains("screen shot") ||
+                lower.contains("screen capture") || lower.contains("screen photo") ||
+                lower.contains("photo lo") || lower.contains("screenshot le") || lower.contains("screenshot lo")
+        if (isScreenshotRequest) {
+            return com.example.ai.ToolCall(
+                id = "call_fast_screenshot",
+                type = "function",
+                functionName = "take_screenshot",
+                argumentsJson = "{}"
+            )
+        }
+
+        // 10. Wi-Fi Control Fast-Path (Hindi + English)
+        val isWifiOn = lower.contains("wifi on") || lower.contains("wi-fi on") ||
+                lower.contains("wifi chalu") || lower.contains("wifi start") || lower.contains("turn on wifi")
+        if (isWifiOn) {
+            return com.example.ai.ToolCall(
+                id = "call_fast_wifi_on",
+                type = "function",
+                functionName = "control_wifi",
+                argumentsJson = "{\"action\":\"on\"}"
+            )
+        }
+
+        val isWifiOff = lower.contains("wifi off") || lower.contains("wi-fi off") ||
+                lower.contains("wifi band") || lower.contains("turn off wifi")
+        if (isWifiOff) {
+            return com.example.ai.ToolCall(
+                id = "call_fast_wifi_off",
+                type = "function",
+                functionName = "control_wifi",
+                argumentsJson = "{\"action\":\"off\"}"
+            )
+        }
+
+        val isWifiToggle = lower.contains("wifi toggle") || lower == "wifi" || lower == "wi-fi"
+        if (isWifiToggle) {
+            return com.example.ai.ToolCall(
+                id = "call_fast_wifi_toggle",
+                type = "function",
+                functionName = "control_wifi",
+                argumentsJson = "{\"action\":\"toggle\"}"
+            )
+        }
+
         return null
     }
 
@@ -631,7 +677,11 @@ You are MARK 85 OS (J.A.R.V.I.S.), an advanced, polite, and razor-sharp AI phone
 Address the user respectfully as "sir" when appropriate.
 Keep your verbal spoken answers brief, natural, elegant, confident, and actionable.
 
+CRITICAL IDENTITY RULE: You are JARVIS / MARK 85 OS. NEVER refer to yourself as a robot or say "As a robot" or "I am an AI robot" or speak mechanically when you cannot perform an action. If an action fails, is restricted, or requires permission, speak calmly and naturally in your own persona: "Sir, I am unable to perform that right now" or "Sir, please grant accessibility permission to proceed."
+
 You have access to Android tools to control the user's device:
+- take_screenshot: Takes a full screenshot of the device screen immediately
+- control_wifi: Turns Wi-Fi on or off, toggles Wi-Fi state (action: 'on', 'off', 'toggle', 'status')
 - control_flashlight: Turns device flashlight / torch on or off immediately (action: 'on', 'off', 'toggle')
 - control_device: Controls volume, mute, or checks battery reserve status (command: 'battery_status', 'volume_up', 'volume_down', 'mute')
 - phone_call: Directly dials or calls a contact name or phone number immediately without asking redundant questions
@@ -645,7 +695,7 @@ You have access to Android tools to control the user's device:
 - search_contact: Search contacts address book by name
 - web_search: Search web or YouTube. CRITICAL: Analyze the query to extract the core subject keywords rather than searching the user's raw conversational phrase.
 - live_internet_info: Fetches live real-time internet data including current weather, temperature, news, score, people, and live facts. Use this to verbally answer live internet queries.
-- send_message: Send or compose a WhatsApp message or SMS to a contact name or number
+- send_message: Sends a WhatsApp message or SMS to a contact name or number, and automatically presses send via accessibility service
 - scroll_screen: Scroll the current open screen up/down/left/right or navigate back/home
 
 Guidelines:

@@ -10,6 +10,8 @@ import android.util.DisplayMetrics
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Android Accessibility Service for hands-free system automation:
@@ -114,7 +116,7 @@ class JarvisAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Performs a global hardware button action (Back, Home, Recents, Notifications, Power Dialog).
+     * Performs a global hardware button action (Back, Home, Recents, Notifications, Power Dialog, Screenshot).
      */
     fun performGlobal(action: String): Boolean {
         val globalAction = when (action.lowercase()) {
@@ -124,9 +126,125 @@ class JarvisAccessibilityService : AccessibilityService() {
             "notifications" -> GLOBAL_ACTION_NOTIFICATIONS
             "quick_settings" -> GLOBAL_ACTION_QUICK_SETTINGS
             "lock_screen" -> GLOBAL_ACTION_LOCK_SCREEN
+            "screenshot" -> if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                GLOBAL_ACTION_TAKE_SCREENSHOT
+            } else {
+                GLOBAL_ACTION_BACK
+            }
             else -> GLOBAL_ACTION_BACK
         }
         return performGlobalAction(globalAction)
+    }
+
+    /**
+     * Takes a native system screenshot using AccessibilityService global action.
+     */
+    fun takeScreenshot(callback: ((Boolean) -> Unit)? = null): Boolean {
+        return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            val success = performGlobalAction(GLOBAL_ACTION_TAKE_SCREENSHOT)
+            callback?.invoke(success)
+            success
+        } else {
+            callback?.invoke(false)
+            false
+        }
+    }
+
+    /**
+     * Automatically finds and clicks the "Send" button in WhatsApp, SMS, or Telegram
+     * when the user asks to send a message. Polls the active window for up to 4 seconds.
+     */
+    fun autoClickSendButton(maxAttempts: Int = 16, intervalMs: Long = 250L, onResult: ((Boolean) -> Unit)? = null) {
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default).launch {
+            var clicked = false
+            for (attempt in 1..maxAttempts) {
+                kotlinx.coroutines.delay(intervalMs)
+                try {
+                    val root = rootInActiveWindow
+                    if (root != null) {
+                        clicked = findAndClickSendButtonNode(root)
+                        root.recycle()
+                        if (clicked) {
+                            Log.i(TAG, "Successfully clicked Send button on attempt $attempt")
+                            break
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error while scanning for Send button: ${e.message}")
+                }
+            }
+
+            // Fallback gesture tap if accessibility node click was restricted by app security
+            if (!clicked) {
+                Log.d(TAG, "Attempting fallback coordinate gesture tap on Send button area...")
+                val metrics: DisplayMetrics = resources.displayMetrics
+                val width = metrics.widthPixels.toFloat()
+                val height = metrics.heightPixels.toFloat()
+                // Typical Send button location in WhatsApp/SMS is bottom right (92% width, 95% height)
+                val sendTapPath = Path().apply {
+                    moveTo(width * 0.92f, height * 0.94f)
+                    lineTo(width * 0.92f, height * 0.94f)
+                }
+                val tapGesture = GestureDescription.Builder()
+                    .addStroke(GestureDescription.StrokeDescription(sendTapPath, 0, 50))
+                    .build()
+                dispatchGesture(tapGesture, null, null)
+            }
+
+            withContext(kotlinx.coroutines.Dispatchers.Main) {
+                onResult?.invoke(clicked)
+            }
+        }
+    }
+
+    private fun findAndClickSendButtonNode(node: AccessibilityNodeInfo): Boolean {
+        // 1. Check known view ID resource names for WhatsApp, Google Messages, Samsung Messages
+        val viewId = node.viewIdResourceName?.lowercase() ?: ""
+        if (viewId.contains("send") || viewId.contains("send_button") || viewId.contains("composer_send")) {
+            if (performClickOnNodeOrParent(node)) return true
+        }
+
+        // 2. Check content description
+        val contentDesc = node.contentDescription?.toString()?.lowercase() ?: ""
+        if (contentDesc == "send" || contentDesc.contains("send message") || contentDesc.contains("भेजें") || contentDesc.contains("send sms")) {
+            if (performClickOnNodeOrParent(node)) return true
+        }
+
+        // 3. Check text
+        val text = node.text?.toString()?.lowercase() ?: ""
+        if (text == "send" || text == "भेजें") {
+            if (performClickOnNodeOrParent(node)) return true
+        }
+
+        // 4. Recursively scan children
+        val childCount = node.childCount
+        for (i in 0 until childCount) {
+            val child = node.getChild(i) ?: continue
+            if (findAndClickSendButtonNode(child)) {
+                child.recycle()
+                return true
+            }
+            child.recycle()
+        }
+        return false
+    }
+
+    private fun performClickOnNodeOrParent(node: AccessibilityNodeInfo): Boolean {
+        if (node.isClickable) {
+            return node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        }
+        var parent = node.parent
+        while (parent != null) {
+            if (parent.isClickable) {
+                val result = parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                parent.recycle()
+                return result
+            }
+            val grandParent = parent.parent
+            parent.recycle()
+            parent = grandParent
+        }
+        return false
     }
 
     companion object {

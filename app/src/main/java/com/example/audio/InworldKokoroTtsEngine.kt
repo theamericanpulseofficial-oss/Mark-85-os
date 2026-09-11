@@ -48,10 +48,10 @@ class InworldKokoroTtsEngine(
     private var audioFocusRequest: AudioFocusRequest? = null
 
     private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(3, TimeUnit.SECONDS)
-        .readTimeout(5, TimeUnit.SECONDS)
-        .writeTimeout(3, TimeUnit.SECONDS)
-        .retryOnConnectionFailure(false)
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .writeTimeout(10, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
         .build()
 
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
@@ -69,7 +69,7 @@ class InworldKokoroTtsEngine(
 
     /**
      * Pre-synthesizes and caches the most frequent real-human responses on disk
-     * so that when wake-word triggers or user issues commands, real human audio
+     * so that when wake-word triggers, actions run, or errors happen, real human audio
      * plays instantly with zero latency (no robotic TTS fallback).
      */
     fun prewarmHumanVoiceCache() {
@@ -82,6 +82,20 @@ class InworldKokoroTtsEngine(
                 "Ji sir, bilkul.",
                 "Ek second sir, check karta hoon.",
                 "Sir, sun raha hoon. Boliye?",
+                "Taking screenshot now, sir.",
+                "Opening Wi-Fi control panel, sir.",
+                "Wi-Fi enabled, sir.",
+                "Wi-Fi turned off, sir.",
+                "Sir, message automatically send karne ke liye display over other apps permission allow kijiye.",
+                "Sir, message automatically send karne ke liye accessibility permission allow kijiye.",
+                "Sir, screenshot lene ke liye accessibility permission allow kijiye.",
+                "Sir, I am unable to perform that right now.",
+                "Sir, unable to capture screenshot right now.",
+                "Volume raised, sir.",
+                "Volume lowered, sir.",
+                "Audio output muted, sir.",
+                "Flashlight on, sir.",
+                "Flashlight off, sir.",
                 "Goodbye sir, standing by."
             )
             for (phrase in commonPhrases) {

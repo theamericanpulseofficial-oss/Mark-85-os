@@ -11,11 +11,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -205,8 +207,9 @@ fun SettingsScreen(
                         text = "MARK 85 OS CONFIG",
                         style = MaterialTheme.typography.titleMedium.copy(
                             fontWeight = FontWeight.Bold,
-                            letterSpacing = 2.sp,
+                            letterSpacing = 1.5.sp,
                             fontFamily = FontFamily.Monospace,
+                            fontSize = 16.sp,
                             color = JarvisCyan
                         )
                     )
@@ -228,6 +231,7 @@ fun SettingsScreen(
                         )
                     }
                 },
+                windowInsets = WindowInsets.statusBars,
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = JarvisDeepBackground
                 )
@@ -239,7 +243,7 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 18.dp, vertical = 10.dp),
+                .padding(horizontal = 16.dp, vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // 1. SINGLE UNIFIED AI MODEL & API KEY SECTION
@@ -530,59 +534,7 @@ fun SettingsScreen(
                 }
             }
 
-            // 2. LIVEKIT STREAMING ARCHITECTURE INFO
-            SettingsSectionHeader(title = "AUDIO PIPELINE ARCHITECTURE", icon = Icons.Default.CloudDone)
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = JarvisSurfaceDark),
-                shape = RoundedCornerShape(16.dp),
-                border = CardDefaults.outlinedCardBorder().copy(
-                    brush = androidx.compose.ui.graphics.SolidColor(Color.White.copy(alpha = 0.08f))
-                )
-            ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column {
-                            Text(
-                                text = "Zero-Latency Direct Pipeline",
-                                color = TextPrimary,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 13.sp
-                            )
-                            Text(
-                                text = "Direct Phone Audio -> Neural AI Core",
-                                color = JarvisCyan,
-                                fontSize = 11.sp,
-                                fontFamily = FontFamily.Monospace
-                            )
-                        }
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(JarvisOnlineGreen.copy(alpha = 0.18f))
-                                .border(1.dp, JarvisOnlineGreen.copy(alpha = 0.5f), RoundedCornerShape(6.dp))
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            Text("OPTIMIZED ⚡", color = JarvisOnlineGreen, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-                        }
-                    }
-
-                    Text(
-                        text = "• LiveKit Info: LiveKit WebRTC server stream karne ke liye use hota hai. Current setup me app direct phone mic aur native audio buffer se chalti hai taaki extra cloud network roundtrips na ho.\n• LiveKit WebRTC server link: wss://jarvis-dnr09c6u.livekit.cloud (Standby mode me configured hai, direct local audio pipeline latency ko sabse fast rakhti hai).",
-                        color = Color(0xFF8FA3AD),
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace,
-                        lineHeight = 16.sp
-                    )
-                }
-            }
-
-            // 4. WAKE WORD & VOICE TTS
+            // 2. WAKE WORD & VOICE TTS
             SettingsSectionHeader(title = "VOICE & SPEECH (TTS ENGINE)", icon = Icons.Default.GraphicEq)
             Card(
                 modifier = Modifier.fillMaxWidth(),

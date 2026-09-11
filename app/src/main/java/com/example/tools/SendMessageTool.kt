@@ -6,17 +6,21 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.ContactsContract
+import android.provider.Settings
 import androidx.core.content.ContextCompat
+import com.example.service.JarvisAccessibilityService
 import org.json.JSONObject
 
 /**
  * Tool for sending messages (SMS or WhatsApp).
  * Resolves contact names to phone numbers automatically.
+ * Automatically clicks the Send button via AccessibilityService if display overlay and accessibility are granted.
+ * If either permission is missing, speaks permission required and directs user to system settings.
  */
 class SendMessageTool : PhoneTool {
     override val name: String = "send_message"
     override val description: String =
-        "Sends or drafts a message via WhatsApp or SMS to a contact name (e.g. 'Papa', 'Rahul') or phone number."
+        "Sends a message via WhatsApp or SMS to a contact name (e.g. 'Papa', 'Rahul') or phone number, and automatically presses send."
     override val requiresConfirmation: Boolean = false
 
     override val parametersJson: String = """
@@ -61,6 +65,39 @@ class SendMessageTool : PhoneTool {
             )
         }
 
+        // 1. Check Display Over Other Apps Permission
+        if (!Settings.canDrawOverlays(context)) {
+            try {
+                val overlayIntent = Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:${context.packageName}")
+                ).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(overlayIntent)
+            } catch (_: Exception) {
+                val genericIntent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(genericIntent)
+            }
+            return ToolExecutionResult(
+                success = false,
+                message = "Display over other apps permission required. Redirected to Settings.",
+                speechResponse = "Sir, message automatically send karne ke liye display over other apps permission allow kijiye."
+            )
+        }
+
+        // 2. Check Accessibility Service Permission
+        if (!JarvisAccessibilityService.isServiceRunning()) {
+            JarvisAccessibilityService.openAccessibilitySettings(context)
+            return ToolExecutionResult(
+                success = false,
+                message = "Accessibility permission required. Redirected to Settings.",
+                speechResponse = "Sir, message automatically send karne ke liye accessibility permission allow kijiye."
+            )
+        }
+
         var resolvedPhone = ""
         var displayName = rawRecipient
 
@@ -92,10 +129,13 @@ class SendMessageTool : PhoneTool {
 
                 try {
                     AppLauncherHelper.launchIntent(context, intent, "WhatsApp to $displayName")
+                    // Trigger AccessibilityService to automatically click Send button once chat screen opens
+                    JarvisAccessibilityService.instance?.autoClickSendButton()
+
                     ToolExecutionResult(
                         success = true,
-                        message = "Opened WhatsApp for $displayName with message: \"$message\"",
-                        speechResponse = if (displayName.isNotBlank()) "Sending WhatsApp message to $displayName, sir." else "Opening WhatsApp to send your message, sir."
+                        message = "Sending WhatsApp message to $displayName: \"$message\"",
+                        speechResponse = if (displayName.isNotBlank()) "Sending WhatsApp message to $displayName, sir." else "Sending WhatsApp message now, sir."
                     )
                 } catch (e: Exception) {
                     // Fallback to generic share or SMS if WhatsApp not installed
@@ -119,11 +159,13 @@ class SendMessageTool : PhoneTool {
                     putExtra("sms_body", message)
                 }
                 AppLauncherHelper.launchIntent(context, intent, "SMS to $displayName")
+                // Trigger AccessibilityService to automatically click Send button in SMS app
+                JarvisAccessibilityService.instance?.autoClickSendButton()
 
                 ToolExecutionResult(
                     success = true,
-                    message = "Opened SMS composer for $displayName with text: \"$message\"",
-                    speechResponse = "Opening SMS composer with your message, sir."
+                    message = "Sending SMS to $displayName: \"$message\"",
+                    speechResponse = if (displayName.isNotBlank()) "Sending SMS to $displayName, sir." else "Sending SMS now, sir."
                 )
             }
         } catch (e: Exception) {
