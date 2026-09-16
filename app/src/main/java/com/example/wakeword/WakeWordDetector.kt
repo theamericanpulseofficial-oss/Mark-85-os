@@ -89,7 +89,8 @@ class LocalWakeWordDetector(
 
     private data class FrameData(
         val rms: Float,
-        val zcr: Float
+        val zcr: Float,
+        val nhfr: Float // Normalized High-Frequency Ratio: 0.0 (low-pitch vowel) to 1.0 (high-pitch /s/ friction)
     )
 
     /**
@@ -285,6 +286,7 @@ class LocalWakeWordDetector(
             }
 
             var sumSquare = 0.0
+            var sumDiffSquare = 0.0
             var zeroCrossings = 0
 
             for (i in 0 until readCount) {
@@ -292,6 +294,8 @@ class LocalWakeWordDetector(
                 sumSquare += sample.toLong() * sample
                 if (i > 0) {
                     val prev = audioBuffer[i - 1]
+                    val diff = sample - prev
+                    sumDiffSquare += diff.toLong() * diff
                     if ((sample >= 0 && prev < 0) || (sample < 0 && prev >= 0)) {
                         zeroCrossings++
                     }
@@ -300,6 +304,12 @@ class LocalWakeWordDetector(
 
             val rms = sqrt(sumSquare / readCount).toFloat()
             val zcr = zeroCrossings.toFloat() / (readCount - 1)
+            // Normalized High-Frequency Ratio: 0.0 (low-pitch vowels) to 1.0 (sibilant friction /s/)
+            val nhfr = if (sumSquare > 1000.0) {
+                ((sumDiffSquare / (4.0 * sumSquare)).toFloat()).coerceIn(0.0f, 1.0f)
+            } else {
+                0.0f
+            }
 
             // STRICT PHONE SPEAKER AUDIO IMMUNITY:
             // When media / videos / reels / music / calls / TTS are blasting through the phone's
@@ -339,14 +349,14 @@ class LocalWakeWordDetector(
             if (noiseFloor < 12f) noiseFloor = 12f
             if (noiseFloor > 600f) noiseFloor = 600f
 
-            // Balanced speech activity detection:
-            // Adapts to ambient noise so normal speech at normal distance triggers,
-            // while ambient room noise / fan hum does NOT trigger.
-            val speechThreshold = maxOf(noiseFloor * 1.45f + 18f, 38f * sensMultiplier)
+            // Calibrated speech activity threshold:
+            // High enough to ignore distant background voices, room chatter, and television noise,
+            // while comfortably picking up the user speaking toward the phone.
+            val speechThreshold = maxOf(noiseFloor * 1.55f + 20f, 42f * sensMultiplier)
             val isSpeech = rms >= speechThreshold
 
             if (isSpeech) {
-                utteranceFrames.add(FrameData(rms, zcr))
+                utteranceFrames.add(FrameData(rms, zcr, nhfr))
                 silenceCount = 0
                 // Prevent unbounded growth if someone speaks continuously
                 if (utteranceFrames.size > 65) {
@@ -355,8 +365,8 @@ class LocalWakeWordDetector(
             } else {
                 if (utteranceFrames.isNotEmpty()) {
                     silenceCount++
-                    // When speech pauses for 4 frames (~80ms), evaluate the completed phrase
-                    if (silenceCount >= 4) {
+                    // When speech pauses for 5 frames (~100ms), evaluate the completed candidate wake phrase
+                    if (silenceCount >= 5) {
                         val now = System.currentTimeMillis()
                         if (now - lastTriggerTime > 2000L) {
                             val matched = evaluateUtterance(
@@ -405,19 +415,29 @@ class LocalWakeWordDetector(
     }
 
     /**
-     * Accurately verifies the acoustic fingerprint of "Jarvis", "Hey Jarvis", or "Ok Jarvis".
+     * Precision acoustic and phonetic verification for "Jarvis", "Hey Jarvis", or "Ok Jarvis".
      *
-     * Invariants of "Jarvis" / "Hey Jarvis":
-     * 1. Duration: 16 to 55 frames (320ms to 1100ms).
-     *    - Short words ("haan", "kya", "bhai", "is", "no") are < 15 frames -> REJECTED.
-     *    - Long sentences are > 55 frames -> REJECTED.
-     * 2. Peak Energy: Peak RMS must rise clearly above the calibrated ambient noise floor.
-     * 3. Voiced Resonant Core ("JAR" / "HEY"):
-     *    - Vowels produce low Zero Crossing Rate (0.02 to 0.24) with sustained energy in the first 65%.
-     * 4. Sibilant Fricative Tail ("-VIS" /s/):
-     *    - The unvoiced /s/ produces elevated ZCR (peak >= 0.23, tail avg elevated) in the final 35%.
-     *    - Non-wake words ending in vowels/nasals ("karo", "hello", "theek", "bhai", "open") lack this /s/ tail -> REJECTED.
-     *    - Words with sibilants at start ("shuru", "stop") have high ZCR at head, not tail -> REJECTED.
+     * STUBBORN IMMUNITY TO OTHER VOICES:
+     * Casual conversation words ("haan", "kya", "bhai", "karo", "accha", "theek", "bolo", "kaha ho",
+     * "phone", "yes", "stop", "six", etc.) are strictly rejected by multi-stage invariants:
+     *
+     * 1. Temporal Bounds:
+     *    - "Jarvis" / "Hey Jarvis" takes 18 to 54 frames (360ms to 1080ms).
+     *    - Short words (< 18 frames) or long sentences (> 54 frames) are immediately rejected.
+     * 2. Envelope Rhythm:
+     *    - "Jarvis" peaks in the first syllable "JAR" (open /ɑː/ vowel), NOT at the very end.
+     * 3. Non-sibilant Head:
+     *    - "J-A-R" starts with a voiced affricate/vowel (low NHFR). Words starting with /s/, /sh/, /ch/
+     *      are rejected.
+     * 4. Voiced Resonant Core ("JAR"):
+     *    - Sustained low NHFR (vocal cord formants) in the first 65%.
+     * 5. Sibilant Fricative Coda ("-VIS" /s/):
+     *    - The alveolar /s/ produces true high-frequency acoustic friction (NHFR >= 0.28, ZCR >= 0.26)
+     *      sustained for at least 3 active speech frames (60ms+).
+     *    - Words ending in vowels or nasals lack this tail -> REJECTED.
+     *    - Low-amplitude microphone noise floor hiss is explicitly rejected via speech-energy gating.
+     * 6. High-Frequency Transition:
+     *    - The tail has significantly higher NHFR and ZCR than the voiced head.
      */
     private fun evaluateUtterance(
         frames: List<FrameData>,
@@ -425,50 +445,81 @@ class LocalWakeWordDetector(
         sensMultiplier: Float
     ): Boolean {
         val total = frames.size
-        // "Jarvis" ~16-36 frames (320-720ms); "Hey Jarvis" / "Ok Jarvis" ~24-54 frames (480-1080ms)
-        if (total !in 16..55) {
+        // "Jarvis" ~18-36 frames (360-720ms); "Hey Jarvis" / "Ok Jarvis" ~28-54 frames (560-1080ms)
+        if (total !in 18..54) {
             return false
         }
 
         val peakRms = frames.maxOfOrNull { it.rms } ?: 0f
-        val minPeakThreshold = maxOf(noiseFloor * 1.6f, 48f * sensMultiplier)
+        val minPeakThreshold = maxOf(noiseFloor * 1.8f, 52f * sensMultiplier)
         if (peakRms < minPeakThreshold) {
             return false
         }
 
+        // 1. Envelope Structure: In "JAR-VIS", peak volume is in the vowel "JAR" (first 15% to 70% of duration).
+        // Sentences where volume rises at the end are rejected.
+        val peakIndex = frames.indexOfFirst { it.rms == peakRms }
+        if (peakIndex > total * 0.72f) {
+            return false
+        }
+
         // Split into Head (first 65%) and Tail (last 35%)
-        val tailStartIndex = (total * 0.65f).toInt().coerceIn(1, total - 2)
+        val tailStartIndex = (total * 0.65f).toInt().coerceIn(1, total - 3)
         val headFrames = frames.subList(0, tailStartIndex)
         val tailFrames = frames.subList(tailStartIndex, total)
 
-        // 1. Voiced Resonant Core ("JAR" / "HEY")
+        // 2. Non-sibilant Head: "Jarvis" starts with /dʒ/ + /ɑː/ (low NHFR).
+        // If someone said "stop", "shuru", "six", "status", the start has high NHFR (> 0.32).
+        val initialFrames = headFrames.take(4)
+        val initialAvgNhfr = if (initialFrames.isNotEmpty()) initialFrames.map { it.nhfr }.average().toFloat() else 0f
+        if (initialAvgNhfr > 0.32f) {
+            return false
+        }
+
+        // 3. Voiced Resonant Core ("JAR" / "HEY"):
+        // Must contain sustained low-frequency vowel energy
         val headVoicedCount = headFrames.count {
-            it.zcr in 0.02f..0.24f && it.rms > noiseFloor * 1.15f
+            it.zcr <= 0.22f && it.nhfr <= 0.24f && it.rms >= noiseFloor * 1.25f
         }
         if (headVoicedCount < 4) {
             return false
         }
 
-        // 2. Sibilant Fricative Tail ("-VIS" /s/)
+        // 4. Sibilant Fricative Tail ("-VIS" /s/):
+        // Real human /s/ produces concentrated high frequency energy (4kHz - 8kHz)
+        val tailPeakNhfr = tailFrames.maxOfOrNull { it.nhfr } ?: 0f
         val tailPeakZcr = tailFrames.maxOfOrNull { it.zcr } ?: 0f
-        val tailHighZcrCount = tailFrames.count { it.zcr >= 0.17f }
-        val tailAvgZcr = if (tailFrames.isNotEmpty()) tailFrames.map { it.zcr }.average().toFloat() else 0f
-        val headAvgZcr = if (headFrames.isNotEmpty()) headFrames.map { it.zcr }.average().toFloat() else 0f
 
-        // Must exhibit genuine /s/ sibilance in the tail:
-        // - Peak ZCR in tail must reach at least 0.23 (fricative sound)
-        // - At least 2 frames in the tail with ZCR >= 0.17
-        // - Tail must be more sibilant than the voiced head
-        val hasSibilantTail = tailPeakZcr >= 0.23f &&
-                tailHighZcrCount >= 2 &&
-                (tailAvgZcr > headAvgZcr * 1.15f || tailAvgZcr >= 0.16f)
+        // Sibilant frames must have genuine speech energy (NOT just quiet background microphone hiss)
+        val tailSibilantFrames = tailFrames.filter {
+            it.nhfr >= 0.22f && it.zcr >= 0.20f && it.rms >= noiseFloor * 1.15f
+        }
+        val tailSibilantCount = tailSibilantFrames.size
 
-        if (!hasSibilantTail) {
+        val minTailNhfr = 0.28f * sensMultiplier.coerceIn(0.85f, 1.15f)
+        val hasTrueSibilantTail = tailPeakNhfr >= minTailNhfr &&
+                tailPeakZcr >= 0.25f &&
+                tailSibilantCount >= 3
+
+        if (!hasTrueSibilantTail) {
             return false
         }
 
-        Log.i(TAG, "Acoustic match confirmed! [frames=$total, peakRms=%.1f, voiced=$headVoicedCount, tailPeakZcr=%.2f, tailAvgZcr=%.2f]".format(
-            peakRms, tailPeakZcr, tailAvgZcr
+        // 5. Spectral Contrast: Transition from Voiced Head to Sibilant Tail
+        val headAvgNhfr = if (headFrames.isNotEmpty()) headFrames.map { it.nhfr }.average().toFloat() else 0f
+        val tailAvgNhfr = if (tailFrames.isNotEmpty()) tailFrames.map { it.nhfr }.average().toFloat() else 0f
+        val headAvgZcr = if (headFrames.isNotEmpty()) headFrames.map { it.zcr }.average().toFloat() else 0f
+        val tailAvgZcr = if (tailFrames.isNotEmpty()) tailFrames.map { it.zcr }.average().toFloat() else 0f
+
+        val hasContrast = (tailAvgNhfr >= headAvgNhfr * 1.35f || (tailAvgNhfr >= 0.26f && tailAvgZcr >= 0.22f)) &&
+                (tailAvgZcr >= headAvgZcr * 1.18f || tailAvgZcr >= 0.24f)
+
+        if (!hasContrast) {
+            return false
+        }
+
+        Log.i(TAG, "Acoustic match confirmed! [frames=$total, peakRms=%.1f, voiced=$headVoicedCount, tailPeakNhfr=%.2f, tailPeakZcr=%.2f, sibilantCount=$tailSibilantCount]".format(
+            peakRms, tailPeakNhfr, tailPeakZcr, tailSibilantCount
         ))
         return true
     }
