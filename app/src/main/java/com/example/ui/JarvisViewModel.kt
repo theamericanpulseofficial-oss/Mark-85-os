@@ -135,6 +135,35 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun testElevenLabsVoice(customPhrase: String? = null) {
+        val currentSettings = _settings.value
+        if (currentSettings.elevenLabsApiKey.isBlank()) {
+            _ttsTestState.value = ConnectionTestState.Error("Please enter your ElevenLabs API key first.")
+            return
+        }
+
+        _ttsTestState.value = ConnectionTestState.Testing
+        viewModelScope.launch {
+            val phrase = customPhrase ?: "Greetings, sir. ElevenLabs neural voice pipeline is active and nominal. J.A.R.V.I.S. standing by."
+            val result = com.example.audio.ElevenLabsTtsEngine.testVoiceSynthesis(
+                context = context,
+                settings = currentSettings,
+                testText = phrase
+            )
+
+            result.fold(
+                onSuccess = { reply ->
+                    _ttsTestState.value = ConnectionTestState.Success(reply)
+                },
+                onFailure = { error ->
+                    _ttsTestState.value = ConnectionTestState.Error(
+                        error.message ?: "ElevenLabs voice test failed."
+                    )
+                }
+            )
+        }
+    }
+
     fun resetTtsTestState() {
         _ttsTestState.value = ConnectionTestState.Idle
     }

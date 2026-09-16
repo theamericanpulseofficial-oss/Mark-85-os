@@ -26,8 +26,13 @@ data class JarvisSettings(
     val ttsPitch: Float = 1.0f,
     val ttsVolume: Float = 1.0f,
     val debugLogging: Boolean = false,
-    val ttsProvider: String = TTS_PROVIDER_INWORLD,
-    val inworldApiKey: String = DEFAULT_INWORLD_API_KEY,
+    val ttsProvider: String = TTS_PROVIDER_ANDROID,
+    val elevenLabsApiKey: String = "",
+    val elevenLabsVoiceId: String = DEFAULT_ELEVENLABS_VOICE,
+    val elevenLabsModel: String = DEFAULT_ELEVENLABS_MODEL,
+    val elevenLabsStability: Float = 0.5f,
+    val elevenLabsSimilarity: Float = 0.75f,
+    val inworldApiKey: String = "",
     val inworldVoiceId: String = DEFAULT_INWORLD_VOICE,
     val inworldModel: String = DEFAULT_INWORLD_MODEL,
     val inworldEndpoint: String = DEFAULT_INWORLD_ENDPOINT,
@@ -43,12 +48,31 @@ data class JarvisSettings(
     val continuousConversation: Boolean get() = continuousListening
 
     companion object {
+        const val TTS_PROVIDER_ELEVENLABS = "elevenlabs"
         const val TTS_PROVIDER_INWORLD = "inworld"
         const val TTS_PROVIDER_ANDROID = "android"
 
+        const val DEFAULT_ELEVENLABS_VOICE = "JBFqnCBsd6RMkjVDRZzb" // George - British JARVIS
+        const val DEFAULT_ELEVENLABS_MODEL = "eleven_turbo_v2_5"
+
+        val PRESET_ELEVENLABS_VOICES = listOf(
+            "JBFqnCBsd6RMkjVDRZzb" to "George (British Jarvis - Deep & Warm)",
+            "pNInz6obpgDQGcFmaJgB" to "Adam (Deep & Confident)",
+            "onwK4e9ZLuTAKqWW03F9" to "Daniel (British Formal / News)",
+            "N2lVS1w4EtoT3dr4eOWO" to "Callum (Intense & Crisp)",
+            "21m00Tcm4TlvDq8ikWAM" to "Rachel (Calm Female)",
+            "EXAVITQu4vr4xnSDxMaL" to "Bella (Expressive Female)"
+        )
+
+        val PRESET_ELEVENLABS_MODELS = listOf(
+            "eleven_turbo_v2_5",
+            "eleven_flash_v2_5",
+            "eleven_multilingual_v2"
+        )
+
         // Pre-configured keys requested by user for seamless testing without manual re-entry
         const val DEFAULT_NVIDIA_API_KEY = "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"
-        const val DEFAULT_INWORLD_API_KEY = "NXQzeUdielA3MnhEcks4OHFONzU1VXBfYXpyN3FoSU46TXpWei1qLUpCcDNBbzJvX3BsRUJXQw=="
+        const val DEFAULT_INWORLD_API_KEY = ""
 
         const val DEFAULT_INWORLD_VOICE = "Dennis"
         const val DEFAULT_INWORLD_MODEL = "inworld-tts-2"
@@ -122,10 +146,16 @@ CRITICAL FOR LOW LATENCY: Keep your spoken responses concise, direct, and under 
             val finalNvidiaKey = if (savedNvidiaKey.isBlank()) DEFAULT_NVIDIA_API_KEY else savedNvidiaKey
 
             val savedInworldKey = prefs.getString(SecurePreferencesHelper.KEY_INWORLD_API_KEY, "")
-            val finalInworldKey = if (savedInworldKey.isBlank()) DEFAULT_INWORLD_API_KEY else savedInworldKey
+            val finalInworldKey = savedInworldKey
 
-            val savedTtsProvider = prefs.getString(SecurePreferencesHelper.KEY_TTS_PROVIDER, TTS_PROVIDER_INWORLD)
-            val finalTtsProvider = if (savedTtsProvider == TTS_PROVIDER_ANDROID) TTS_PROVIDER_INWORLD else savedTtsProvider
+            val savedElevenLabsKey = prefs.getString(SecurePreferencesHelper.KEY_ELEVENLABS_API_KEY, "")
+
+            val savedTtsProvider = prefs.getString(SecurePreferencesHelper.KEY_TTS_PROVIDER, TTS_PROVIDER_ANDROID)
+            val finalTtsProvider = when (savedTtsProvider) {
+                TTS_PROVIDER_ELEVENLABS -> if (savedElevenLabsKey.isBlank()) TTS_PROVIDER_ANDROID else TTS_PROVIDER_ELEVENLABS
+                TTS_PROVIDER_INWORLD -> if (finalInworldKey.isBlank()) TTS_PROVIDER_ANDROID else TTS_PROVIDER_INWORLD
+                else -> TTS_PROVIDER_ANDROID
+            }
 
             return JarvisSettings(
                 nvidiaApiKey = finalNvidiaKey,
@@ -171,6 +201,11 @@ CRITICAL FOR LOW LATENCY: Keep your spoken responses concise, direct, and under 
                 ttsVolume = prefs.getFloat(SecurePreferencesHelper.KEY_TTS_VOLUME, 1.0f),
                 debugLogging = prefs.getBoolean(SecurePreferencesHelper.KEY_DEBUG_LOGGING, false),
                 ttsProvider = finalTtsProvider,
+                elevenLabsApiKey = savedElevenLabsKey,
+                elevenLabsVoiceId = prefs.getString(SecurePreferencesHelper.KEY_ELEVENLABS_VOICE_ID, DEFAULT_ELEVENLABS_VOICE),
+                elevenLabsModel = prefs.getString(SecurePreferencesHelper.KEY_ELEVENLABS_MODEL, DEFAULT_ELEVENLABS_MODEL),
+                elevenLabsStability = prefs.getFloat(SecurePreferencesHelper.KEY_ELEVENLABS_STABILITY, 0.5f),
+                elevenLabsSimilarity = prefs.getFloat(SecurePreferencesHelper.KEY_ELEVENLABS_SIMILARITY, 0.75f),
                 inworldApiKey = finalInworldKey,
                 inworldVoiceId = prefs.getString(SecurePreferencesHelper.KEY_INWORLD_VOICE_ID, DEFAULT_INWORLD_VOICE),
                 inworldModel = prefs.getString(SecurePreferencesHelper.KEY_INWORLD_MODEL, DEFAULT_INWORLD_MODEL),
@@ -204,6 +239,11 @@ CRITICAL FOR LOW LATENCY: Keep your spoken responses concise, direct, and under 
             prefs.saveFloat(SecurePreferencesHelper.KEY_TTS_VOLUME, settings.ttsVolume)
             prefs.saveBoolean(SecurePreferencesHelper.KEY_DEBUG_LOGGING, settings.debugLogging)
             prefs.saveString(SecurePreferencesHelper.KEY_TTS_PROVIDER, settings.ttsProvider)
+            prefs.saveString(SecurePreferencesHelper.KEY_ELEVENLABS_API_KEY, settings.elevenLabsApiKey)
+            prefs.saveString(SecurePreferencesHelper.KEY_ELEVENLABS_VOICE_ID, settings.elevenLabsVoiceId)
+            prefs.saveString(SecurePreferencesHelper.KEY_ELEVENLABS_MODEL, settings.elevenLabsModel)
+            prefs.saveFloat(SecurePreferencesHelper.KEY_ELEVENLABS_STABILITY, settings.elevenLabsStability)
+            prefs.saveFloat(SecurePreferencesHelper.KEY_ELEVENLABS_SIMILARITY, settings.elevenLabsSimilarity)
             prefs.saveString(SecurePreferencesHelper.KEY_INWORLD_API_KEY, settings.inworldApiKey)
             prefs.saveString(SecurePreferencesHelper.KEY_INWORLD_VOICE_ID, settings.inworldVoiceId)
             prefs.saveString(SecurePreferencesHelper.KEY_INWORLD_MODEL, settings.inworldModel)

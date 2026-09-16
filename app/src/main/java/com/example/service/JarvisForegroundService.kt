@@ -62,7 +62,7 @@ class JarvisForegroundService : Service() {
         settings = JarvisSettings.load(this)
         toolRegistry = ToolRegistry(this)
         agent = JarvisAgent(this, toolRegistry)
-        ttsEngine = InworldKokoroTtsEngine(
+        ttsEngine = com.example.audio.SmartJarvisTtsEngine(
             context = this,
             settings = settings
         )
@@ -100,7 +100,7 @@ class JarvisForegroundService : Service() {
             }
             ACTION_RELOAD_SETTINGS -> {
                 Log.d(TAG, "Reloading settings from storage...")
-                (ttsEngine as? InworldKokoroTtsEngine)?.updateSettings(settings)
+                (ttsEngine as? com.example.audio.SmartJarvisTtsEngine)?.updateSettings(settings)
                 ttsEngine.setRate(settings.ttsSpeed)
                 ttsEngine.setPitch(settings.ttsPitch)
             }
@@ -226,7 +226,9 @@ class JarvisForegroundService : Service() {
             }
         }
 
+        LocalWakeWordDetector.isAppSpeaking = true
         ttsEngine.speak(wakePrompt) {
+            LocalWakeWordDetector.isAppSpeaking = false
             promptTimeoutJob.cancel()
             if (!startedCapture) {
                 startedCapture = true
@@ -268,7 +270,7 @@ class JarvisForegroundService : Service() {
         serviceScope.launch {
             // Always reload the freshest settings (including new API keys and models)
             settings = JarvisSettings.load(this@JarvisForegroundService)
-            (ttsEngine as? InworldKokoroTtsEngine)?.updateSettings(settings)
+            (ttsEngine as? com.example.audio.SmartJarvisTtsEngine)?.updateSettings(settings)
             _liveTranscript.value = trimmed
 
             // 1. Check if user wants to close / exit conversation
@@ -278,7 +280,9 @@ class JarvisForegroundService : Service() {
                 agent.setState(AgentState.SPEAKING)
                 _agentStateFlow.value = AgentState.SPEAKING
                 updateNotification(AgentState.SPEAKING.label)
+                LocalWakeWordDetector.isAppSpeaking = true
                 ttsEngine.speak(farewell) {
+                    LocalWakeWordDetector.isAppSpeaking = false
                     serviceScope.launch {
                         kotlinx.coroutines.delay(250)
                         startStandbyWakeWord()
@@ -326,7 +330,9 @@ class JarvisForegroundService : Service() {
             // If an instant acknowledgment was played, queue the main response so it plays seamlessly right after it
             val queueMode = if (instantAck != null) TextToSpeech.QUEUE_ADD else TextToSpeech.QUEUE_FLUSH
 
+            LocalWakeWordDetector.isAppSpeaking = true
             ttsEngine.speak(spokenResponse, queueMode) {
+                LocalWakeWordDetector.isAppSpeaking = false
                 watchdogJob.cancel()
                 onSpeechTurnCompleted()
             }

@@ -58,6 +58,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -149,6 +150,15 @@ fun SettingsScreen(
     // Voice & Wake Word
     val ttsTestState by viewModel.ttsTestState.collectAsState()
     var ttsProvider by remember(currentSettings) { mutableStateOf(currentSettings.ttsProvider) }
+    var elevenLabsApiKey by remember(currentSettings) { mutableStateOf(currentSettings.elevenLabsApiKey) }
+    var showElevenLabsApiKey by remember { mutableStateOf(false) }
+    var elevenLabsVoiceId by remember(currentSettings) { mutableStateOf(currentSettings.elevenLabsVoiceId) }
+    var elevenLabsModel by remember(currentSettings) { mutableStateOf(currentSettings.elevenLabsModel) }
+    var elevenLabsStability by remember(currentSettings) { mutableFloatStateOf(currentSettings.elevenLabsStability) }
+    var elevenLabsSimilarity by remember(currentSettings) { mutableFloatStateOf(currentSettings.elevenLabsSimilarity) }
+    var showElevenLabsHelp by remember { mutableStateOf(false) }
+    var showElevenLabsAdvanced by remember { mutableStateOf(false) }
+
     var inworldApiKey by remember(currentSettings) { mutableStateOf(currentSettings.inworldApiKey) }
     var showInworldApiKey by remember { mutableStateOf(false) }
     var inworldVoiceId by remember(currentSettings) { mutableStateOf(currentSettings.inworldVoiceId) }
@@ -188,6 +198,11 @@ fun SettingsScreen(
             ttsPitch = ttsPitch,
             debugLogging = debugLogging,
             ttsProvider = ttsProvider,
+            elevenLabsApiKey = elevenLabsApiKey.trim(),
+            elevenLabsVoiceId = elevenLabsVoiceId.trim(),
+            elevenLabsModel = elevenLabsModel.trim(),
+            elevenLabsStability = elevenLabsStability,
+            elevenLabsSimilarity = elevenLabsSimilarity,
             inworldApiKey = inworldApiKey.trim(),
             inworldVoiceId = inworldVoiceId.trim(),
             inworldModel = inworldModel.trim(),
@@ -548,9 +563,9 @@ fun SettingsScreen(
                 )
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    // Provider Selector Toggle
+                    // Provider Selector Tabs
                     Text(
-                        text = "SPEECH SYNTHESIS ENGINE",
+                        text = "SPEECH SYNTHESIS ENGINE (TTS)",
                         style = MaterialTheme.typography.labelSmall.copy(
                             color = JarvisCyan,
                             fontFamily = FontFamily.Monospace,
@@ -559,108 +574,533 @@ fun SettingsScreen(
                         )
                     )
 
-                    // Dedicated Real Human Neural Voice Indicator
+                    // 3-Option Provider Selector Tabs
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(JarvisCyan.copy(alpha = 0.12f))
-                            .border(1.dp, JarvisCyan.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Icon(
-                            Icons.Default.RecordVoiceOver,
-                            contentDescription = null,
-                            tint = JarvisCyan,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column {
-                            Text(
-                                text = "REAL HUMAN NEURAL VOICE (INWORLD AI)",
-                                color = JarvisCyan,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp,
-                                fontFamily = FontFamily.Monospace
-                            )
-                            Text(
-                                text = "Robotic voice removed. Instant pre-cached responses ready.",
-                                color = JarvisOnlineGreen,
-                                fontSize = 11.sp,
-                                fontFamily = FontFamily.Monospace
-                            )
+                        listOf(
+                            Triple(JarvisSettings.TTS_PROVIDER_ELEVENLABS, "ElevenLabs AI", "Human Voice"),
+                            Triple(JarvisSettings.TTS_PROVIDER_INWORLD, "Inworld AI", "TTS-2"),
+                            Triple(JarvisSettings.TTS_PROVIDER_ANDROID, "System TTS", "Offline")
+                        ).forEach { (provider, title, sub) ->
+                            val selected = ttsProvider == provider
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (selected) JarvisCyan.copy(alpha = 0.22f) else Color(0xFF13202E))
+                                    .border(
+                                        1.5.dp,
+                                        if (selected) JarvisCyan else Color.White.copy(alpha = 0.1f),
+                                        RoundedCornerShape(10.dp)
+                                    )
+                                    .clickable {
+                                        ttsProvider = provider
+                                        commitChanges()
+                                    }
+                                    .padding(vertical = 10.dp, horizontal = 4.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = title,
+                                        color = if (selected) JarvisCyan else Color(0xFFCAD8DE),
+                                        fontSize = 11.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = sub,
+                                        color = if (selected) JarvisCyan.copy(alpha = 0.8f) else Color(0xFF7A8D94),
+                                        fontSize = 9.sp,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                            }
                         }
                     }
 
-                    // Inworld Kokoro configuration details
-                    Text(
-                        text = "Authentic human emotion and cadence powered by Inworld Realtime TTS. Pre-caches instant acknowledgments like 'Yes sir' and 'Ji sir'.",
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            color = Color(0xFFB9CACB),
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp
-                        )
-                    )
+                    // --- PROVIDER 1: ELEVENLABS AI ---
+                    if (ttsProvider == JarvisSettings.TTS_PROVIDER_ELEVENLABS) {
+                        // Status Indicator
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (elevenLabsApiKey.isNotBlank()) JarvisCyan.copy(alpha = 0.14f) else Color(0xFF2A2015))
+                                .border(
+                                    1.dp,
+                                    if (elevenLabsApiKey.isNotBlank()) JarvisCyan.copy(alpha = 0.45f) else Color(0xFFFFB300).copy(alpha = 0.4f),
+                                    RoundedCornerShape(10.dp)
+                                )
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.RecordVoiceOver,
+                                contentDescription = null,
+                                tint = if (elevenLabsApiKey.isNotBlank()) JarvisCyan else Color(0xFFFFB300),
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = if (elevenLabsApiKey.isNotBlank()) "ELEVENLABS ULTRA-REALISTIC VOICE ACTIVE" else "ELEVENLABS API KEY REQUIRED",
+                                    color = if (elevenLabsApiKey.isNotBlank()) JarvisCyan else Color(0xFFFFB300),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                                Text(
+                                    text = if (elevenLabsApiKey.isNotBlank()) "Streaming British/Human J.A.R.V.I.S. neural voice." else "Enter your API key or check setup guide below.",
+                                    color = if (elevenLabsApiKey.isNotBlank()) JarvisOnlineGreen else Color(0xFFCAD8DE),
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
 
-                    // Inworld Kokoro API Key
-                    OutlinedTextField(
-                        value = inworldApiKey,
-                        onValueChange = {
-                            inworldApiKey = it
-                            commitChanges()
-                        },
-                        label = { Text("Inworld Neural API Key / Token") },
-                        placeholder = { Text("NXQzeUdielA3MnhEcks4OHFONzU1VXBfYXpyN3FoSU46...") },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("inworld_api_key_input"),
-                        visualTransformation = if (showInworldApiKey) VisualTransformation.None else PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                        trailingIcon = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                // Clear / Cut button
-                                if (inworldApiKey.isNotBlank()) {
-                                    IconButton(onClick = {
-                                        inworldApiKey = ""
-                                        commitChanges()
-                                    }) {
-                                        Icon(
-                                            imageVector = Icons.Default.Clear,
-                                            contentDescription = "Clear or cut Inworld key",
-                                            tint = Color(0xFFFF6B6B),
-                                            modifier = Modifier.size(18.dp)
+                        // Collapsible Setup Guide Box
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showElevenLabsHelp = !showElevenLabsHelp },
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF0F1E2C)),
+                            shape = RoundedCornerShape(10.dp),
+                            border = CardDefaults.outlinedCardBorder().copy(
+                                brush = androidx.compose.ui.graphics.SolidColor(JarvisCyan.copy(alpha = 0.25f))
+                            )
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.HelpOutline, contentDescription = null, tint = JarvisCyan, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "ElevenLabs Setup Guide (Kaise karein)",
+                                            color = JarvisCyan,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 11.sp,
+                                            fontFamily = FontFamily.Monospace
                                         )
                                     }
-                                }
-                                // Paste button
-                                IconButton(onClick = {
-                                    val clipText = clipboardManager.getText()?.text
-                                    if (!clipText.isNullOrBlank()) {
-                                        inworldApiKey = clipText
-                                        commitChanges()
-                                    }
-                                }) {
                                     Icon(
-                                        imageVector = Icons.Default.ContentPaste,
-                                        contentDescription = "Paste API Key",
+                                        imageVector = if (showElevenLabsHelp) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                        contentDescription = null,
                                         tint = JarvisCyan,
                                         modifier = Modifier.size(18.dp)
                                     )
                                 }
-                                // Visibility toggle
-                                IconButton(onClick = { showInworldApiKey = !showInworldApiKey }) {
-                                    Icon(
-                                        imageVector = if (showInworldApiKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                        contentDescription = "Toggle Inworld Key Visibility",
-                                        tint = TextSecondary,
-                                        modifier = Modifier.size(18.dp)
+
+                                if (showElevenLabsHelp) {
+                                    HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+                                    Text(
+                                        text = "1. API Key Creation:\n" +
+                                                "• elevenlabs.io par account banayein ya login karein.\n" +
+                                                "• Profile icon (bottom-left) -> 'API Keys' -> 'Create API Key' par click karein.\n" +
+                                                "• Permissions options me 'Full Access' chunein (ya TTS aur Voices permissions allow karein).\n\n" +
+                                                "2. Recommended Voice (British Jarvis):\n" +
+                                                "• 'George' (JBFqnCBsd6RMkjVDRZzb) — Deep, warm British accent jo authentic MCU JARVIS jaisa sound karta hai.\n" +
+                                                "• Voice Library se aap 'Daniel' ya 'Adam' ya koi bhi custom voice ID bhi yahan paste kar sakte hain.\n\n" +
+                                                "3. Recommended Model:\n" +
+                                                "• 'eleven_turbo_v2_5' chunein — Yeh English aur Hindi dono bolta hai aur sabse kam latency deta hai.\n\n" +
+                                                "4. Smart Disk Caching:\n" +
+                                                "• App common replies ('Yes, sir?', 'Bilkul sir', etc.) automatically phone storage me save rakhta hai jisse character credits waste nahi hote aur response instant play hota hai.",
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            color = Color(0xFFCAD8DE),
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 10.sp,
+                                            lineHeight = 15.sp
+                                        )
                                     )
                                 }
                             }
-                        },
-                        colors = outlinedTextFieldColors()
-                    )
+                        }
+
+                        // API Key Input
+                        OutlinedTextField(
+                            value = elevenLabsApiKey,
+                            onValueChange = {
+                                elevenLabsApiKey = it
+                                commitChanges()
+                            },
+                            label = { Text("ElevenLabs API Key") },
+                            placeholder = { Text("xi-api-key...") },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("elevenlabs_api_key_input"),
+                            visualTransformation = if (showElevenLabsApiKey) VisualTransformation.None else PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                            trailingIcon = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (elevenLabsApiKey.isNotBlank()) {
+                                        IconButton(onClick = {
+                                            elevenLabsApiKey = ""
+                                            commitChanges()
+                                        }) {
+                                            Icon(
+                                                imageVector = Icons.Default.Clear,
+                                                contentDescription = "Clear ElevenLabs key",
+                                                tint = Color(0xFFFF6B6B),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                    IconButton(onClick = {
+                                        val clipText = clipboardManager.getText()?.text
+                                        if (!clipText.isNullOrBlank()) {
+                                            elevenLabsApiKey = clipText
+                                            commitChanges()
+                                        }
+                                    }) {
+                                        Icon(
+                                            imageVector = Icons.Default.ContentPaste,
+                                            contentDescription = "Paste API Key",
+                                            tint = JarvisCyan,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                    IconButton(onClick = { showElevenLabsApiKey = !showElevenLabsApiKey }) {
+                                        Icon(
+                                            imageVector = if (showElevenLabsApiKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                            contentDescription = "Toggle Visibility",
+                                            tint = TextSecondary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            },
+                            colors = outlinedTextFieldColors()
+                        )
+
+                        // Voice Persona Presets
+                        Text(
+                            text = "VOICE PERSONA PRESET",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                color = TextSecondary,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 10.sp
+                            )
+                        )
+
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                listOf(
+                                    "JBFqnCBsd6RMkjVDRZzb" to "George (JARVIS British)",
+                                    "pNInz6obpgDQGcFmaJgB" to "Adam (Deep)",
+                                    "onwK4e9ZLuTAKqWW03F9" to "Daniel (Formal)"
+                                ).forEach { (id, label) ->
+                                    val isSelected = elevenLabsVoiceId == id
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(if (isSelected) JarvisCyan.copy(alpha = 0.22f) else Color(0xFF13202E))
+                                            .border(
+                                                1.dp,
+                                                if (isSelected) JarvisCyan.copy(alpha = 0.7f) else Color.White.copy(alpha = 0.08f),
+                                                RoundedCornerShape(8.dp)
+                                            )
+                                            .clickable {
+                                                elevenLabsVoiceId = id
+                                                commitChanges()
+                                            }
+                                            .padding(vertical = 7.dp, horizontal = 4.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = label,
+                                            color = if (isSelected) JarvisCyan else Color(0xFFCAD8DE),
+                                            fontSize = 10.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                    }
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                listOf(
+                                    "N2lVS1w4EtoT3dr4eOWO" to "Callum (Crisp)",
+                                    "21m00Tcm4TlvDq8ikWAM" to "Rachel (Female)",
+                                    "EXAVITQu4vr4xnSDxMaL" to "Bella (Female)"
+                                ).forEach { (id, label) ->
+                                    val isSelected = elevenLabsVoiceId == id
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(if (isSelected) JarvisCyan.copy(alpha = 0.22f) else Color(0xFF13202E))
+                                            .border(
+                                                1.dp,
+                                                if (isSelected) JarvisCyan.copy(alpha = 0.7f) else Color.White.copy(alpha = 0.08f),
+                                                RoundedCornerShape(8.dp)
+                                            )
+                                            .clickable {
+                                                elevenLabsVoiceId = id
+                                                commitChanges()
+                                            }
+                                            .padding(vertical = 7.dp, horizontal = 4.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = label,
+                                            color = if (isSelected) JarvisCyan else Color(0xFFCAD8DE),
+                                            fontSize = 10.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Custom Voice ID
+                        OutlinedTextField(
+                            value = elevenLabsVoiceId,
+                            onValueChange = {
+                                elevenLabsVoiceId = it
+                                commitChanges()
+                            },
+                            label = { Text("Voice ID (Custom / Preset)") },
+                            placeholder = { Text("e.g. JBFqnCBsd6RMkjVDRZzb") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            colors = outlinedTextFieldColors()
+                        )
+
+                        // Model selection chips
+                        Text(
+                            text = "ELEVENLABS MODEL",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                color = TextSecondary,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 10.sp
+                            )
+                        )
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf(
+                                "eleven_turbo_v2_5" to "Turbo v2.5 (Fastest)",
+                                "eleven_flash_v2_5" to "Flash v2.5",
+                                "eleven_multilingual_v2" to "Multilingual v2"
+                            ).forEach { (model, label) ->
+                                val isSelected = elevenLabsModel == model
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (isSelected) JarvisCyan.copy(alpha = 0.2f) else Color(0xFF13202E))
+                                        .border(
+                                            1.dp,
+                                            if (isSelected) JarvisCyan.copy(alpha = 0.6f) else Color.White.copy(alpha = 0.08f),
+                                            RoundedCornerShape(8.dp)
+                                        )
+                                        .clickable {
+                                            elevenLabsModel = model
+                                            commitChanges()
+                                        }
+                                        .padding(vertical = 6.dp, horizontal = 4.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = label,
+                                        color = if (isSelected) JarvisCyan else Color(0xFFCAD8DE),
+                                        fontSize = 10.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                }
+                            }
+                        }
+
+                        // Collapsible Advanced Tuning (Stability / Similarity)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showElevenLabsAdvanced = !showElevenLabsAdvanced }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "Advanced Voice Settings (Stability & Clarity)",
+                                color = TextSecondary,
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                            Icon(
+                                imageVector = if (showElevenLabsAdvanced) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                contentDescription = null,
+                                tint = TextSecondary
+                            )
+                        }
+
+                        if (showElevenLabsAdvanced) {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text("Stability", color = TextPrimary, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                                    Text(String.format("%.2f", elevenLabsStability), color = JarvisCyan, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                                }
+                                Slider(
+                                    value = elevenLabsStability,
+                                    onValueChange = {
+                                        elevenLabsStability = it
+                                        commitChanges()
+                                    },
+                                    valueRange = 0.0f..1.0f,
+                                    colors = SliderDefaults.colors(thumbColor = JarvisCyan, activeTrackColor = JarvisCyan)
+                                )
+
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text("Similarity Boost", color = TextPrimary, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                                    Text(String.format("%.2f", elevenLabsSimilarity), color = JarvisCyan, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                                }
+                                Slider(
+                                    value = elevenLabsSimilarity,
+                                    onValueChange = {
+                                        elevenLabsSimilarity = it
+                                        commitChanges()
+                                    },
+                                    valueRange = 0.0f..1.0f,
+                                    colors = SliderDefaults.colors(thumbColor = JarvisCyan, activeTrackColor = JarvisCyan)
+                                )
+                            }
+                        }
+
+                        // Preview Voice Button
+                        Button(
+                            onClick = {
+                                commitChanges()
+                                viewModel.testElevenLabsVoice()
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("test_elevenlabs_voice_button"),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = JarvisCyan.copy(alpha = 0.22f),
+                                contentColor = JarvisCyan
+                            ),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.VolumeUp,
+                                    contentDescription = "Test ElevenLabs Voice",
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Preview ElevenLabs Neural Voice",
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                    }
+
+                    // --- PROVIDER 2: INWORLD AI ---
+                    if (ttsProvider == JarvisSettings.TTS_PROVIDER_INWORLD) {
+                        // Inworld Speech Synthesis Indicator
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (inworldApiKey.isNotBlank()) JarvisCyan.copy(alpha = 0.12f) else JarvisOnlineGreen.copy(alpha = 0.10f))
+                                .border(1.dp, if (inworldApiKey.isNotBlank()) JarvisCyan.copy(alpha = 0.45f) else JarvisOnlineGreen.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.RecordVoiceOver,
+                                contentDescription = null,
+                                tint = if (inworldApiKey.isNotBlank()) JarvisCyan else JarvisOnlineGreen,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = if (inworldApiKey.isNotBlank()) "REAL HUMAN NEURAL VOICE (INWORLD AI)" else "INWORLD API KEY REQUIRED",
+                                    color = if (inworldApiKey.isNotBlank()) JarvisCyan else JarvisOnlineGreen,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                                Text(
+                                    text = if (inworldApiKey.isNotBlank()) "Inworld neural emotion voice active." else "Enter your Inworld token to activate TTS-2.",
+                                    color = if (inworldApiKey.isNotBlank()) JarvisOnlineGreen else Color(0xFFB9CACB),
+                                    fontSize = 11.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
+
+                        // Inworld API Key
+                        OutlinedTextField(
+                            value = inworldApiKey,
+                            onValueChange = {
+                                inworldApiKey = it
+                                commitChanges()
+                            },
+                            label = { Text("Inworld API Key") },
+                            placeholder = { Text("Enter Inworld API key") },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("inworld_api_key_input"),
+                            visualTransformation = if (showInworldApiKey) VisualTransformation.None else PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                            trailingIcon = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (inworldApiKey.isNotBlank()) {
+                                        IconButton(onClick = {
+                                            inworldApiKey = ""
+                                            commitChanges()
+                                        }) {
+                                            Icon(
+                                                imageVector = Icons.Default.Clear,
+                                                contentDescription = "Clear Inworld key",
+                                                tint = Color(0xFFFF6B6B),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                    IconButton(onClick = {
+                                        val clipText = clipboardManager.getText()?.text
+                                        if (!clipText.isNullOrBlank()) {
+                                            inworldApiKey = clipText
+                                            commitChanges()
+                                        }
+                                    }) {
+                                        Icon(
+                                            imageVector = Icons.Default.ContentPaste,
+                                            contentDescription = "Paste API Key",
+                                            tint = JarvisCyan,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                    IconButton(onClick = { showInworldApiKey = !showInworldApiKey }) {
+                                        Icon(
+                                            imageVector = if (showInworldApiKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                            contentDescription = "Toggle Inworld Key Visibility",
+                                            tint = TextSecondary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            },
+                            colors = outlinedTextFieldColors()
+                        )
 
                         // Voice persona presets
                         Text(
@@ -870,72 +1310,109 @@ fun SettingsScreen(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "Preview Real Neural Voice",
+                                    text = "Preview Inworld Neural Voice",
                                     fontWeight = FontWeight.Bold,
                                     fontFamily = FontFamily.Monospace,
                                     fontSize = 12.sp
                                 )
                             }
                         }
+                    }
 
-                        // Test Voice feedback
-                        when (val state = ttsTestState) {
-                            is ConnectionTestState.Testing -> {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center,
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                                ) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(16.dp),
-                                        color = JarvisCyan,
-                                        strokeWidth = 2.dp
-                                    )
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Text(
-                                        "Synthesizing & playing neural speech...",
-                                        color = TextSecondary,
-                                        fontSize = 12.sp,
-                                        fontFamily = FontFamily.Monospace
-                                    )
-                                }
+                    // --- PROVIDER 3: SYSTEM ANDROID TTS ---
+                    if (ttsProvider == JarvisSettings.TTS_PROVIDER_ANDROID) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(JarvisOnlineGreen.copy(alpha = 0.10f))
+                                .border(1.dp, JarvisOnlineGreen.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.RecordVoiceOver,
+                                contentDescription = null,
+                                tint = JarvisOnlineGreen,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = "SYSTEM NATIVE TTS (OFFLINE)",
+                                    color = JarvisOnlineGreen,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                                Text(
+                                    text = "100% offline using your Android device's built-in speech engine. Zero API key required.",
+                                    color = Color(0xFFB9CACB),
+                                    fontSize = 11.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
                             }
-                            is ConnectionTestState.Success -> {
-                                Card(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    colors = CardDefaults.cardColors(containerColor = JarvisOnlineGreen.copy(alpha = 0.12f)),
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = JarvisOnlineGreen, modifier = Modifier.size(18.dp))
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(
-                                            text = state.message,
-                                            color = JarvisOnlineGreen,
-                                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)
-                                        )
-                                    }
-                                }
-                            }
-                            is ConnectionTestState.Error -> {
-                                Card(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    colors = CardDefaults.cardColors(containerColor = JarvisErrorRed.copy(alpha = 0.12f)),
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Default.Info, contentDescription = null, tint = JarvisErrorRed, modifier = Modifier.size(18.dp))
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(
-                                            text = state.message,
-                                            color = JarvisErrorRed,
-                                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp)
-                                        )
-                                    }
-                                }
-                            }
-                            ConnectionTestState.Idle -> {}
                         }
+                    }
+
+                    // Test Voice feedback
+                    when (val state = ttsTestState) {
+                        is ConnectionTestState.Testing -> {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center,
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    color = JarvisCyan,
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    "Synthesizing & playing neural speech...",
+                                    color = TextSecondary,
+                                    fontSize = 12.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
+                        is ConnectionTestState.Success -> {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = JarvisOnlineGreen.copy(alpha = 0.12f)),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = JarvisOnlineGreen, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = state.message,
+                                        color = JarvisOnlineGreen,
+                                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)
+                                    )
+                                }
+                            }
+                        }
+                        is ConnectionTestState.Error -> {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = JarvisErrorRed.copy(alpha = 0.12f)),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Info, contentDescription = null, tint = JarvisErrorRed, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = state.message,
+                                        color = JarvisErrorRed,
+                                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                                    )
+                                }
+                            }
+                        }
+                        ConnectionTestState.Idle -> {}
+                    }
 
                         Text(
                             text = "✓ Auto-Fallback Enabled: If network connection is lost or quota is exhausted, Mark OS will seamlessly speak using native voice without pausing.",

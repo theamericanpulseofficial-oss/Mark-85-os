@@ -5,10 +5,14 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.media.AudioFormat
 import android.media.AudioManager
+import android.media.AudioPlaybackConfiguration
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.NoiseSuppressor
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
@@ -33,10 +37,14 @@ interface WakeWordDetector {
 }
 
 /**
- * Production-grade, silent, hardware-accelerated local wake-word detector.
+ * Production-grade, hardware-accelerated local wake-word detector.
  *
- * Runs a single continuous AudioRecord stream silently in the background
- * (NO constant mic on/off blinking, NO false wake-ups from ambient room noise or fan).
+ * Runs a single continuous AudioRecord stream silently in the background.
+ *
+ * PHONE SPEAKER AUDIO IMMUNITY:
+ * When audio is playing through the phone's physical speaker (e.g. YouTube, Instagram Reels,
+ * Spotify, media videos, incoming ringtone, TTS, or phone calls), the sound coming out
+ * of the phone speaker is STRICTLY BLOCKED from triggering the wake word.
  *
  * Reliably triggers ONLY when the user speaks:
  * - "Hey Jarvis"
@@ -66,6 +74,12 @@ class LocalWakeWordDetector(
     private var listeningJob: Job? = null
     private var onDetectedCallback: ((String?) -> Unit)? = null
 
+    private var playbackCallback: AudioManager.AudioPlaybackCallback? = null
+    @Volatile
+    private var isPlaybackActiveFromCallback: Boolean = false
+    @Volatile
+    private var lastSpeakerActiveTime: Long = 0L
+
     @Volatile
     override var isListening: Boolean = false
         private set
@@ -78,12 +92,69 @@ class LocalWakeWordDetector(
         val zcr: Float
     )
 
+    /**
+     * Determines whether audio is actively playing through the device's physical built-in speaker.
+     * If headphones/earbuds (Bluetooth or wired) are connected, audio is routed to ears and does
+     * not blast into the phone's microphone, so normal wake-word listening remains active.
+     */
     private fun isPhoneSpeakerActive(): Boolean {
         val am = audioManager ?: return false
         return try {
-            am.mode != AudioManager.MODE_NORMAL || am.isMusicActive
+            // If Jarvis itself is speaking TTS
+            if (isAppSpeaking) return true
+
+            // Check if headphones / Bluetooth headsets are connected
+            @Suppress("DEPRECATION")
+            val isHeadphonesConnected = am.isWiredHeadsetOn ||
+                    am.isBluetoothA2dpOn ||
+                    am.isBluetoothScoOn
+
+            val isSystemAudioActive = am.isMusicActive ||
+                    am.mode != AudioManager.MODE_NORMAL ||
+                    isPlaybackActiveFromCallback
+
+            if (isSystemAudioActive) {
+                // If headphones are plugged in, built-in speaker is silent -> not blasting into mic
+                !isHeadphonesConnected
+            } else {
+                false
+            }
         } catch (_: Exception) {
             false
+        }
+    }
+
+    private fun registerPlaybackCallback() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val am = audioManager ?: return
+            try {
+                val cb = object : AudioManager.AudioPlaybackCallback() {
+                    override fun onPlaybackConfigChanged(configs: List<AudioPlaybackConfiguration>?) {
+                        super.onPlaybackConfigChanged(configs)
+                        isPlaybackActiveFromCallback = !configs.isNullOrEmpty()
+                        if (isPlaybackActiveFromCallback) {
+                            lastSpeakerActiveTime = System.currentTimeMillis()
+                        }
+                    }
+                }
+                am.registerAudioPlaybackCallback(cb, Handler(Looper.getMainLooper()))
+                playbackCallback = cb
+            } catch (e: Exception) {
+                Log.w(TAG, "AudioPlaybackCallback register warning: ${e.message}")
+            }
+        }
+    }
+
+    private fun unregisterPlaybackCallback() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val am = audioManager ?: return
+            playbackCallback?.let {
+                try {
+                    am.unregisterAudioPlaybackCallback(it)
+                } catch (_: Exception) {
+                }
+            }
+            playbackCallback = null
         }
     }
 
@@ -142,6 +213,8 @@ class LocalWakeWordDetector(
         this.onDetectedCallback = onWakeWordDetected
         isListening = true
 
+        registerPlaybackCallback()
+
         listeningJob = scope.launch(Dispatchers.IO) {
             runAudioLoop()
         }
@@ -155,9 +228,10 @@ class LocalWakeWordDetector(
         val minBuf = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat)
         val bufferSize = maxOf(minBuf, frameSize * 4, 2048)
 
+        // Prioritize VOICE_RECOGNITION for hardware acoustic echo cancellation and tuning
         val candidateSources = listOf(
-            MediaRecorder.AudioSource.MIC,
             MediaRecorder.AudioSource.VOICE_RECOGNITION,
+            MediaRecorder.AudioSource.MIC,
             MediaRecorder.AudioSource.DEFAULT
         )
 
@@ -227,25 +301,48 @@ class LocalWakeWordDetector(
             val rms = sqrt(sumSquare / readCount).toFloat()
             val zcr = zeroCrossings.toFloat() / (readCount - 1)
 
+            // STRICT PHONE SPEAKER AUDIO IMMUNITY:
+            // When media / videos / reels / music / calls / TTS are blasting through the phone's
+            // physical speaker right next to the mic, discard all frames and prevent any wake trigger!
             val speakerActive = filterPhoneSpeakerAudio && isPhoneSpeakerActive()
-            val speakerMultiplier = if (speakerActive) 1.5f else 1.0f
-
-            // Dynamic ambient noise floor calibration
-            if (!speakerActive) {
+            if (speakerActive) {
+                lastSpeakerActiveTime = System.currentTimeMillis()
+                utteranceFrames.clear()
+                silenceCount = 0
+                // Adapt noiseFloor to the speaker output so when it stops, the floor quickly settles
                 if (rms < noiseFloor * 1.5f) {
+                    noiseFloor = 0.95f * noiseFloor + 0.05f * rms
+                } else {
                     noiseFloor = 0.98f * noiseFloor + 0.02f * rms
-                } else if (rms > noiseFloor * 2.2f) {
-                    // Very slow drift up if room noise changes
-                    noiseFloor = 0.999f * noiseFloor + 0.001f * rms
                 }
                 if (noiseFloor < 12f) noiseFloor = 12f
-                if (noiseFloor > 600f) noiseFloor = 600f
+                if (noiseFloor > 800f) noiseFloor = 800f
+                continue
             }
+
+            // Acoustic tail clearance: prevent room reverberation from the phone speaker
+            // from falsely triggering within 450ms after the speaker stops playing.
+            val timeSinceSpeaker = System.currentTimeMillis() - lastSpeakerActiveTime
+            if (timeSinceSpeaker < 450L) {
+                utteranceFrames.clear()
+                silenceCount = 0
+                continue
+            }
+
+            // Dynamic ambient noise floor calibration during quiet intervals
+            if (rms < noiseFloor * 1.5f) {
+                noiseFloor = 0.98f * noiseFloor + 0.02f * rms
+            } else if (rms > noiseFloor * 2.2f) {
+                // Very slow drift up if room noise changes
+                noiseFloor = 0.999f * noiseFloor + 0.001f * rms
+            }
+            if (noiseFloor < 12f) noiseFloor = 12f
+            if (noiseFloor > 600f) noiseFloor = 600f
 
             // Balanced speech activity detection:
             // Adapts to ambient noise so normal speech at normal distance triggers,
             // while ambient room noise / fan hum does NOT trigger.
-            val speechThreshold = maxOf(noiseFloor * 1.45f * speakerMultiplier + 18f, 38f * sensMultiplier)
+            val speechThreshold = maxOf(noiseFloor * 1.45f + 18f, 38f * sensMultiplier)
             val isSpeech = rms >= speechThreshold
 
             if (isSpeech) {
@@ -274,6 +371,7 @@ class LocalWakeWordDetector(
                                 isListening = false
                                 utteranceFrames.clear()
                                 releaseAudioEffects()
+                                unregisterPlaybackCallback()
                                 try {
                                     record.stop()
                                     record.release()
@@ -296,6 +394,7 @@ class LocalWakeWordDetector(
         }
 
         releaseAudioEffects()
+        unregisterPlaybackCallback()
         try {
             audioRecord?.stop()
             audioRecord?.release()
@@ -379,6 +478,7 @@ class LocalWakeWordDetector(
         listeningJob?.cancel()
         listeningJob = null
         releaseAudioEffects()
+        unregisterPlaybackCallback()
         try {
             audioRecord?.stop()
             audioRecord?.release()
@@ -395,5 +495,12 @@ class LocalWakeWordDetector(
 
     companion object {
         private const val TAG = "LocalWakeWord"
+
+        /**
+         * Global flag set whenever Jarvis is actively speaking via TTS
+         * to guarantee zero self-wakeups.
+         */
+        @Volatile
+        var isAppSpeaking: Boolean = false
     }
 }

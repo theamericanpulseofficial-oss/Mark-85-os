@@ -700,16 +700,22 @@ class JarvisAgent(
                 )
             }
         }
-        val callKoRegex = Regex("""^(.+?)\s+ko\s+(?:call karo|call lagao|phone lagao|phone karo|call|phone)$""")
+        val callKoRegex = Regex("""^(.+?)\s+(?:ko|par|pe)\s+(?:call karo|call lagao|phone lagao|phone karo|call|phone)$""")
         val callKoMatch = callKoRegex.find(lower)
         if (callKoMatch != null) {
             val target = callKoMatch.groupValues[1].trim()
             if (target.isNotBlank()) {
+                val isDigits = target.replace(Regex("[^0-9+]"), "").length >= 7 && !target.any { it.isLetter() }
+                val args = if (isDigits) {
+                    "{\"phoneNumber\":\"$target\"}"
+                } else {
+                    "{\"contactName\":\"$target\"}"
+                }
                 return com.example.ai.ToolCall(
                     id = "call_fast_phone_call_ko",
                     type = "function",
                     functionName = "phone_call",
-                    argumentsJson = "{\"contactName\":\"$target\"}"
+                    argumentsJson = args
                 )
             }
         }

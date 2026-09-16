@@ -55,6 +55,18 @@ fun JarvisApp(viewModel: JarvisViewModel) {
     val isRunning by viewModel.isServiceRunning.collectAsState()
     val settings by viewModel.settings.collectAsState()
 
+    val requiredPermissions = remember {
+        val list = mutableListOf(
+            Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.CALL_PHONE,
+            Manifest.permission.READ_CONTACTS
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            list.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        list.toTypedArray()
+    }
+
     var hasMicPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(
@@ -64,18 +76,22 @@ fun JarvisApp(viewModel: JarvisViewModel) {
         )
     }
 
-    val micPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        hasMicPermission = isGranted
-        if (isGranted) {
+    val permissionsLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        hasMicPermission = permissions[Manifest.permission.RECORD_AUDIO] == true ||
+                ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        if (hasMicPermission) {
             viewModel.toggleAssistant(true)
         }
     }
 
     LaunchedEffect(Unit) {
-        if (!hasMicPermission) {
-            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        val missing = requiredPermissions.filter {
+            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isNotEmpty()) {
+            permissionsLauncher.launch(missing.toTypedArray())
         }
     }
 
@@ -102,10 +118,7 @@ fun JarvisApp(viewModel: JarvisViewModel) {
                     viewModel = viewModel,
                     onNavigateToSettings = { currentScreen = JarvisScreen.SETTINGS },
                     onRequestMicrophonePermission = {
-                        micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            genericPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                        }
+                        permissionsLauncher.launch(requiredPermissions)
                     },
                     hasMicrophonePermission = hasMicPermission
                 )
